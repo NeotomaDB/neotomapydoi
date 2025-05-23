@@ -1,0 +1,35 @@
+import psycopg2
+import psycopg2.extras
+from sys import getsizeof
+from json import dumps
+
+
+def neo_size(con: psycopg2.connect, self) -> object:
+    """_Get dataset object size._
+
+    Args:
+        con (psycopg2.connect): _A valid Neotoma database connection._
+
+    Raises:
+        AttributeError: _An error raised when the dataset has not been previously frozen._
+
+    Returns:
+        object: _An object that aligns with the DataCite `size` property._
+    """    
+    query = """
+        SELECT download
+        FROM doi.frozen
+        WHERE datasetid = %(datasetid)s;
+    """
+
+    with con.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute(query, {"datasetid": self.datasetid})
+        response = cur.fetchone()
+        if response:
+            download = getsizeof(dumps(response))
+            size = [f"{round(download/1000)} kB"]
+        else:
+            raise AttributeError(
+                "There is no frozen version of this dataset. Use the freeze_data()"
+            )
+    return size

@@ -2,3 +2,7 @@
 .env
 
 .coverage
+
+src/neotomadoi/__pycache__/
+
+*.log
