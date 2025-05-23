@@ -1,0 +1,45 @@
+[project]
+name = "neotomadoi"
+version = "0.1.0"
+description = "Minting process for the Neotoma Paleoecology Database's DOIs using DataCite."
+readme = "README.md"
+authors = [
+    { name = "Simon Goring", email = "goring@wisc.edu" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "argparse>=1.4.0",
+    "datacite>=1.2.0",
+    "deepdiff>=8.4.2",
+    "jsonschema>=4.23.0",
+    "psycopg2>=2.9.10",
+    "pyalex>=0.18",
+    "python-dotenv>=1.1.0",
+    "pyyaml>=6.0.2",
+    "requests>=2.32.3",
+    "setuptools>=79.0.0",
+    "shapely>=2.1.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest-cov>=6.1.1",
+    "pytest>=8.3.5",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_functions = "test_*"
+
+[tool.ruff]
+# Same as Black.
+line-length = 88
+indent-width = 4
+
+# Assume Python 3.12
+target-version = "py312"
