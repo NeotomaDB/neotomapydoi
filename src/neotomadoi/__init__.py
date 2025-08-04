@@ -2,7 +2,6 @@ from .testMode import testMode as testMode
 from .neo_connect import neo_connect as neo_connect
 from .neo_creators import neo_creators as neo_creators
 from .neotomaDOI import neotomaDOI as neotomaDOI
-from .neotomaDOI import testMode as testMode
 from .neotomaDOI import credentials as credentials
 from .neotomaDOI import activity as activity
 from .neo_contributors import neo_contributors as neo_contributors

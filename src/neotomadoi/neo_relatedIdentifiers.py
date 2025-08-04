@@ -1,7 +1,5 @@
 import psycopg2
 import psycopg2.extras
-import html
-
 
 def neo_relatedIdentifiers(con: psycopg2.connect, self) -> object:
     """_Return identifiers related to the Neotoma dataset._
