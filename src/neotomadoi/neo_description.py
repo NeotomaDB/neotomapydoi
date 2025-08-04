@@ -20,7 +20,6 @@ def neo_description(con: psycopg2.connect, self) -> object:
         INNER JOIN ndb.sites AS st ON st.siteid = cu.siteid
         WHERE ds.datasetid = %(datasetid)s; 
     """
-
     with con.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
         cur.execute(query, {"datasetid": self.datasetid})
         response = cur.fetchone()

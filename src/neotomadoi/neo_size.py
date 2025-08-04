@@ -21,7 +21,6 @@ def neo_size(con: psycopg2.connect, self) -> object:
         FROM doi.frozen
         WHERE datasetid = %(datasetid)s;
     """
-
     with con.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
         cur.execute(query, {"datasetid": self.datasetid})
         response = cur.fetchone()

@@ -11,9 +11,9 @@ def neo_creators(con: psycopg2.connect, self) -> list:
     Returns:
         list: _A list of dataset PIs, including any external identifiers._
     """
-
     query = """
         SELECT DISTINCT cts.contactname AS name,
+                        dspi.piorder,
                         -- cts.address AS affiliation,
                         jsonb_agg(DISTINCT 
                                 jsonb_build_object('nameIdentifier', exct.identifier,
@@ -24,9 +24,9 @@ def neo_creators(con: psycopg2.connect, self) -> list:
         LEFT JOIN ndb.externalcontacts AS exct ON exct.contactid = cts.contactid
         LEFT JOIN ndb.externaldatabases AS exdb ON exdb.extdatabaseid = exct.extdatabaseid
         WHERE dspi.datasetid = %(datasetid)s
-        GROUP BY cts.contactid;
+        GROUP BY cts.contactid, dspi.piorder
+        ORDER BY dspi.piorder;
     """
-
     with con.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
         cur.execute(query, {"datasetid": self.datasetid})
         response = cur.fetchall()
@@ -41,5 +41,5 @@ def neo_creators(con: psycopg2.connect, self) -> list:
                 [i.get("nameIdentifier") for i in creator.get("nameIdentifiers")]
             ):
                 _ = creator.pop("nameIdentifiers", None)
-            creators.append(creator)
+            creators.append({k:creator[k] for k in creator.keys() if k != 'piorder'})
     return creators

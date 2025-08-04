@@ -1,6 +1,7 @@
 language: EN
 rightsList:
   - rights: CC-BY4
+    rightsIdentifier: cc-by-4.0
     rightsUri: http://creativecommons.org/licenses/by/4.0/deed.en_US
     schemeUri: https://spdx.org/licenses/
     rightsIdentifierScheme: SPDX
@@ -8,6 +9,7 @@ rightsList:
     rightsUri: https://localcontexts.org/notice/open-to-collaborate/
     schemeUri: https://localcontexts.org
     rightsIdentifierScheme: Local Contexts
+    rightsIdentifier: Open-To-Collaborate
 schemaVersion: "http://datacite.org/schema/kernel-4"
 types:
   resourceType: Dataset/Paleoecological Sample Data

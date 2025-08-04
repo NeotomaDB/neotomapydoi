@@ -40,7 +40,6 @@ def neo_dates(con: psycopg2.connect, self) -> object:
         (SELECT * FROM issued)) AS dates
         WHERE date is not NULL;
     """
-
     with con.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
         cur.execute(query, {"datasetid": self.datasetid})
         response = cur.fetchall()

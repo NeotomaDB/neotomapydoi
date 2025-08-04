@@ -20,100 +20,10 @@ import psycopg2.extras
 from psycopg2.extras import Json
 import deepdiff.diff as dd
 from json import dumps
-from enum import Enum
 from warnings import warn
-
-
-class testMode(Enum):
-    """_A class to manage connections to Neotoma and DataCite_
-
-    Args:
-        Enum (_string_): _An enumerated object, with either `test`or `prod` modes._
-    """    
-    test = "https://api.test.datacite.org/dois/"
-    prod = "https://api.datacite.org/dois/"
-
-
-class activity:
-    """_An activity component, to return past activity for a DOI object._
-    """    
-    def __init__(self, doi: str):
-        """_Create a new activity object._
-
-        Args:
-            doi (str): _A valid DOI string._
-
-        Raises:
-            requests.RequestException: _Is DOI activity available for this object?_
-        """        
-        url = f"https://api.datacite.org/dois/{doi}/activities"
-        activities = requests.get(url)
-        if activities.status_code != 200:
-            raise requests.RequestException(
-                f"Failed to obtain DOI activity: {activities.text}"
-            )
-        response = activities.json()
-        self.activity = response.get("data")
-
-    def __repr__(self)-> str:
-        """_Print output summary._
-
-        Returns:
-            _str_: _A high-level overview of the activity object for the particular doi._
-        """        
-        dates = [
-            datetime.strptime(
-                i.get("attributes").get("prov:generatedAtTime"), "%Y-%m-%dT%H:%M:%S.%fZ"
-            )
-            for i in self.activity
-        ]
-        if dates == []:
-            return "<activity class: No activity.>"
-        else:
-            return f"<activity class: {len(self.activity)} records - from: {min(dates).strftime('%Y-%m-%D')} to {max(dates).strftime('%Y-%m-%D')}>"
-
-    def __len__(self)-> int:
-        """_Get the number of times the DOI has been modified._
-
-        Returns:
-            int: _The number of elements in the activity object._
-        """        
-        return len(self.activity)
-
-
-class credentials:
-    """_An object to manage credentials for the DOI minting flow._
-    """    
-    def __init__(self, datacite_meta: dict):
-        """_Create a new credentials object._
-
-        Args:
-            datacite_meta (dict): _The required DataCite authentication metadata for logging in to the DOI minting system._
-        """        
-        assert isinstance(
-            datacite_meta, dict
-        ), "You must pass a `dict` as the metatdata."
-        assert all(
-            [i in datacite_meta.keys() for i in ["user", "mode"]]
-        ), "Your client metadata must be a dict with the keys `user`, and `mode`."
-        assert all(
-            [i in datacite_meta.get("mode").keys() for i in ["test", "prod"]]
-        ), "You must have production and test data in your client credentials."
-        self.data = datacite_meta
-
-    def mode(self, mode: testMode = testMode.test):
-        """_Change the interaction mode for the DOI system._
-
-        Args:
-            mode (testMode, optional): _Change or set the mode for DOI interaction_. Defaults to testMode.test.
-
-        Returns:
-            _type_: _Returns the DOI interaction mode._
-        """        
-        output = self.data.get("mode").get(mode.name)
-        output["username"] = self.data.get("user")
-        return output
-
+from .testMode import testMode
+from .credentials import credentials
+from .activity import activity
 
 class neotomaDOI:
     def __init__(self, datasetid: int, defaults: str = None):
@@ -143,11 +53,27 @@ class neotomaDOI:
     def __str__(self):
         return dumps(self.data)
 
-    def add_schema(self, schema):
+    def add_schema(self, schema:str):
+        """_Add additional DataCite schema metadata to the NeotomaDOI object._
+
+        Args:
+            schema (str): _A valid file path to a valid DataCite JSON schema._
+        """        
         with open(schema, "r", encoding="UTF-8") as f:
             self.schema = load(f)
 
-    def validate(self, schema: str = None):
+    def validate(self, schema: str = None) -> bool:
+        """_summary_
+
+        Args:
+            schema (str, optional): _A valid DataCite JSON schema_. Defaults to None.
+
+        Raises:
+            jsonschema.exceptions.ValidationError: _Validation errors from the `jsonschema` package._
+
+        Returns:
+            _bool_: _Returns True if the function passes the schema, else raises an error._
+        """        
         if schema is not None:
             self.add_schema(schema)
         if self.schema is not None:
@@ -159,8 +85,14 @@ class neotomaDOI:
                 raise jsonschema.exceptions.ValidationError(
                     "There is an issue in the JSON object passed."
                 )
+        return True
 
     def update(self):
+        """_Add relevant metadata for DOI minting rom the remote database._
+
+        Raises:
+            ValueError: _If critical metadata is missing, or is formatted incorrectly, then raise an error._
+        """        
         if self.datasetid:
             con = neo_connect(test=(self.mode.name == "test"))
             try:
@@ -184,23 +116,55 @@ class neotomaDOI:
                 )
 
     def set_user(self, cred: credentials, mode: testMode = testMode.test):
+        """_Set the user credentials for the DataCite API, depending on the mode._
+
+        Args:
+            cred (credentials): _A neotomapydoi.credentials() object._
+            mode (testMode, optional): _The API mode, either test or produxtion_. Defaults to testMode.test.
+
+        Raises:
+            TypeError: _Raised if credentials are not passed in the proper format._
+        """        
         if not isinstance(cred, credentials):
             raise TypeError("Credentials must be of type neotomadoi.credential")
         self.client = cred
         self.mode = mode
 
     def test_mode(self):
+        """_Set the DataCite API interactions to sadbox mode._
+
+        Raises:
+            ValueError: _Ensure that credentials have been passed to the datacite object._
+        """        
+        if self.client is None:
+            raise ValueError("You cannot change the mode without credentials [use neotomapydoi.credentials()].")
         self.mode = testMode.test
 
     def prod_mode(self):
+        """_Set the DataCite API mode to production._
+
+        Raises:
+            ValueError: _Raises a ValueError is the value of the self.client is not set using `object.set_user()`._
+        """        
         if self.client is None:
             raise ValueError("You cannot use production mode without credentials.")
         self.mode = testMode.prod
 
     def get_mode(self):
+        """_Get the current DataCite DOI access mode (test or production)._
+
+        Returns:
+            _str_: _Prints the current mode name and URL path._
+        """        
         return print(f"mode: {self.mode.name}; URL: {self.mode.value}")
 
     def get_meta(self):
+        """_Obtain the current DOI metadata for the record (if it exists).
+
+        Raises:
+            ValueError: _Raises a value error when there is no DOI identifier associated with the data object._
+            requests.exceptions.HTTPError: _Passes along any API errors returned from DataCite associated with the identifier provided._
+        """        
         if self.identifiers:
             dois = self.identifiers.get("identifier")
             doi_call = requests.get(
@@ -215,14 +179,16 @@ class neotomaDOI:
                 self.meta = doi_call.json().get("data").get("attributes")
             else:
                 raise requests.exceptions.HTTPError(doi_call.json().get("errors"))
+        else:
+            raise ValueError("There is no DOI currently associated with this object.")
 
     def update_doi(self):
         outcome = None
         try:
             outcome = self.validate()
         except Exception:
-            outcome = True
-        if outcome:
+            outcome = False
+        if outcome is False:
             print("Validation error. Check with the `validate()` method.")
             return None
         doi = self.identifiers.get("identifier")
@@ -245,13 +211,14 @@ class neotomaDOI:
                     self.client.mode(self.mode).get("username"),
                     self.client.mode(self.mode).get("pw"),
                 ),
-                json=payload,
+                data=dumps(payload),
             )
             if modifier.status_code != 200:
                 raise requests.RequestException(
                     f"Failed to modify DOI: {modifier.text}"
                 )
             else:
+                print(f'Successful PUT update for dataset {self.datasetid} to {self.identifiers['identifier']}')    
                 response = modifier.json()
                 assert response.get("data").get("id") == doi
                 self.meta = self.get_meta()
@@ -346,7 +313,7 @@ class neotomaDOI:
                     self.client.mode(self.mode).get("username"),
                     self.client.mode(self.mode).get("pw"),
                 ),
-                json={"data": payload},
+                data=dumps({"data": payload}),
             )
             if created.status_code != 201:
                 raise requests.RequestException(f"Failed to create DOI: {created.text}")
@@ -422,7 +389,7 @@ class neotomaDOI:
                 self.mode.value,
                 headers={"Content-Type": "application/vnd.api+json"},
                 auth=(self.client.get("username"), self.client.get("password")),
-                json={"data": payload},
+                data=dumps(f'{"data": {payload}}'),
             )
             if created.status_code != 200:
                 raise requests.RequestException(f"Failed to create DOI: {created.text}")

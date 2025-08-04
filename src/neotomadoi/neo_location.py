@@ -29,14 +29,12 @@ def neo_location(con: psycopg2.connect, self) -> object:
         response = cur.fetchone()
     polygon = wkt.loads(response[0])
     coordinates = list(polygon.exterior.coords)
-
     geolocation["geoLocationBox"] = {
         "westBoundLongitude": min([i[0] for i in coordinates]),
         "eastBoundLongitude": max([i[0] for i in coordinates]),
         "southBoundLatitude": min([i[1] for i in coordinates]),
         "northBoundLatitude": max([i[1] for i in coordinates]),
     }
-
     place_query = """
         select
             st.sitename,
@@ -51,11 +49,9 @@ def neo_location(con: psycopg2.connect, self) -> object:
             inner join ndb.datasets as ds on ds.collectionunitid = cu.collectionunitid
             inner join ap.gadm as gadm on st_contains(gadm.shape, st.geog::geometry)
             where ds.datasetid = %(datasetid)s;"""
-
     with con.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
         cur.execute(place_query, {"datasetid": self.datasetid})
         response = cur.fetchone()
-
     if response is None:
         place_query = """
         with dsset as (
@@ -87,13 +83,11 @@ def neo_location(con: psycopg2.connect, self) -> object:
         from ap.gadm as gadm
         order by dist
         limit 1) gadm;"""
-
         with con.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
             cur.execute(place_query, {"datasetid": self.datasetid})
             response = cur.fetchone()
         if response is None:
             raise ValueError("This site cannot return a close neighbour.")
-
     response_loc = (
         "Site name: "
         + response[0]

@@ -18,7 +18,8 @@ con = neotomadoi.neo_connect(test=False)
 query = """SELECT DISTINCT ds.datasetid
            FROM ndb.datasets AS ds
            LEFT JOIN ndb.datasetdoi AS dsdoi ON dsdoi.datasetid = ds.datasetid
-           WHERE NOT ds.datasettypeid = 1;"""
+           WHERE NOT ds.datasettypeid = 1
+           ORDER BY ds.datasetid;"""
 
 with con.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
     cur.execute(query)
@@ -37,7 +38,7 @@ for i in datasetids:
             if "critical" in str(e):
                 new_doi.freeze_data(con)
                 new_doi.update()
-        new_doi.validate()
+        _ = new_doi.validate()
         new_doi.get_activity()
         old_activity = len(new_doi.activity)
         new_doi.mint_doi(publish=True)

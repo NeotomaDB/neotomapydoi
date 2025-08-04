@@ -6,3 +6,5 @@
 src/neotomadoi/__pycache__/
 
 *.log
+
+tests/__pycache__/

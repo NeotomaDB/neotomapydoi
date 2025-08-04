@@ -1,3 +1,4 @@
+from .testMode import testMode as testMode
 from .neo_connect import neo_connect as neo_connect
 from .neo_creators import neo_creators as neo_creators
 from .neotomaDOI import neotomaDOI as neotomaDOI

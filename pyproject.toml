@@ -1,12 +1,25 @@
 [project]
 name = "neotomadoi"
 version = "0.1.0"
-description = "Minting process for the Neotoma Paleoecology Database's DOIs using DataCite."
-readme = "README.md"
+description = "Minting process for the Neotoma Paleoecology Database's DOIs using the DataCite API."
+readme = {file = "README.md", content-type = "text/markdown"}
+license = "MIT"
+license-files=["LICENSE"]
 authors = [
     { name = "Simon Goring", email = "goring@wisc.edu" }
 ]
 requires-python = ">=3.12"
+keywords=["DataCite", "Postgresql", "metadata", "Open Science"]
+classifiers=["Development Status :: 4 - Beta", 
+             "Framework :: Hatch",
+             "Framework :: Pytest",
+             "Intended Audience :: Science/Research",
+             "License :: OSI Approved :: MIT License",
+             "Operating System :: POSIX :: Linux",
+             "Programming Language :: Python :: 3.12",
+             "Programming Language :: SQL",
+             "Topic :: Database",
+             "Topic :: Scientific/Engineering"]
 dependencies = [
     "argparse>=1.4.0",
     "datacite>=1.2.0",
@@ -20,6 +33,10 @@ dependencies = [
     "setuptools>=79.0.0",
     "shapely>=2.1.0",
 ]
+
+[project.urls]
+Repository = "https://github.com/NeotomaDB/neotomapydoi"
+Issues = "https://github.com/NeotomaDB/neotomapydoi/issues"
 
 [build-system]
 requires = ["hatchling"]
@@ -35,6 +52,7 @@ dev = [
 testpaths = ["tests"]
 python_files = "test_*.py"
 python_functions = "test_*"
+adopts = "--doctest-modules"
 
 [tool.ruff]
 # Same as Black.
@@ -43,3 +61,4 @@ indent-width = 4
 
 # Assume Python 3.12
 target-version = "py312"
+

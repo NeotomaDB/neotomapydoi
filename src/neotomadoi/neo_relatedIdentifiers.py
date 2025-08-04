@@ -1,5 +1,6 @@
 import psycopg2
 import psycopg2.extras
+import html
 
 
 def neo_relatedIdentifiers(con: psycopg2.connect, self) -> object:
@@ -12,14 +13,12 @@ def neo_relatedIdentifiers(con: psycopg2.connect, self) -> object:
         object: _An object that aligns with the DataCite `relatedIdentifiers` schema for Neotoma datasets._
     """    
     relatedIdentifiers = []
-
     ds_query = """
         SELECT doi as identifier,
         'DOI' as identifierType
         FROM doi.doimeta
         WHERE datasetid = %(datasetid)s;
     """
-
     with con.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
         _ = cur.execute(ds_query, {"datasetid": self.datasetid})
         response = cur.fetchall()
@@ -34,7 +33,6 @@ def neo_relatedIdentifiers(con: psycopg2.connect, self) -> object:
                             "relatedIdentifier": i.get("identifier"),
                         }
                     )
-
     pub_query = """
         SELECT DISTINCT pub.doi as doi,
         'DOI' as identifierType
@@ -42,7 +40,6 @@ def neo_relatedIdentifiers(con: psycopg2.connect, self) -> object:
         INNER JOIN ndb.publications AS pub ON dsp.publicationid = pub.publicationid
         WHERE dsp.datasetid = %(datasetid)s
         AND pub.doi IS NOT NULL;"""
-
     with con.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
         cur.execute(pub_query, {"datasetid": self.datasetid})
         response = cur.fetchall()
@@ -57,7 +54,6 @@ def neo_relatedIdentifiers(con: psycopg2.connect, self) -> object:
                         "relatedIdentifier": pubdoi.get("doi"),
                     }
                 )
-
     geochron_query = """
         SELECT DISTINCT egc.identifier as identifier,
                edb.extdatabasename as name
@@ -69,7 +65,6 @@ def neo_relatedIdentifiers(con: psycopg2.connect, self) -> object:
         inner join ndb.externalgeochronology as egc on egc.geochronid = gcc.geochronid
         inner join ndb.externaldatabases as edb on edb.extdatabaseid = egc.extdatabaseid
         WHERE ds.datasetid = %(datasetid)s AND edb.extdatabasename = 'ARK';"""
-
     with con.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
         cur.execute(geochron_query, {"datasetid": self.datasetid})
         response = cur.fetchall()
@@ -84,5 +79,4 @@ def neo_relatedIdentifiers(con: psycopg2.connect, self) -> object:
                         "relatedIdentifier": gc_ark.get("identifier"),
                     }
                 )
-
     return relatedIdentifiers
