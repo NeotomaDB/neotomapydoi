@@ -48,7 +48,6 @@ def neo_relatedIdentifiers(con: psycopg2.connect, self) -> object:
                     {
                         "relatedIdentifierType": "DOI",
                         "relationType": "IsSupplementTo",
-                        #'relatedItemType': 'JournalArticle',
                         "relatedIdentifier": pubdoi.get("doi"),
                     }
                 )
