@@ -6,16 +6,14 @@ import psycopg2.extras
 from random import choice
 
 
-def test_freeze_data():
-    load_dotenv()
-    con = neo_connect()
+def test_freeze_data(doiobj_test, con_tester):
     unfrozen_query = """
         SELECT ds.datasetid
         FROM ndb.datasets AS ds
         LEFT OUTER JOIN doi.frozen AS fz ON fz.datasetid = ds.datasetid
         WHERE fz.datasetid IS null
 		  AND ds.datasettypeid > 1;"""
-    with con.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+    with con_tester.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
         cur.execute(unfrozen_query)
         frozen_result = cur.fetchall()
     dsid = choice(frozen_result)[0]
@@ -27,7 +25,7 @@ def test_freeze_data():
     # This is the one that really depends on there being a data object.
     assert isinstance(new_doi.data.get("sizes"), list)
     with warns(UserWarning):
-        new_doi.freeze_data(con)
+        new_doi.freeze_data(con_tester)
 
 
 def test_unfreeze_freeze():

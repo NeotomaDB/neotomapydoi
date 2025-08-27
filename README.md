@@ -1,11 +1,12 @@
 [![lifecycle](https://img.shields.io/badge/lifecycle-active-orange.svg)]
 [![NSF-2410961](https://img.shields.io/badge/NSF-2410961-blue.svg)](https://nsf.gov/awardsearch/showAward?AWD_ID=2410961)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/11102/badge)](https://www.bestpractices.dev/projects/11102)
 
 # `neotomapydoi`: Minting and Managing Neotoma PIDs
 
-Neotoma stores information about tens of thousands of datasets around the world, including spatial, temporal and observational data about the taxa, chemistry and physical properties of the samples found in these sedimentary archives. These records are exposed through the Neotoma R package (neotoma2), the Neotoma API, Neotoma Explorer, and, more broadly, through their Digial Object identifiers (DOIs).
+Neotoma stores information about tens of thousands of datasets around the world, including spatial, temporal and observational data about the taxa, chemistry and physical properties of the samples found in these sedimentary archives. These records are exposed through the Neotoma R package ([`neotoma2`](https::/github.com/NeotomaDB/neotoma2)), the [Neotoma API](https://api.neotomadb.org), [Neotoma Explorer](https://apps.neotomadb.org/explorer), and, more broadly, through their Digial Object identifiers (DOIs).
 
-DOIs managed by DataCite have a defined metadata schema, which allows us to provide terms in a form that can be easily searched and returned by users around the globe, without the need for detailled knowledge about Neotoma or its database schema. These DOIs return users to the Neotoma Landing Pages, where they can download records in JSON format and examine additional metadata about the records.
+DOIs managed by DataCite have a [defined metadata schema](https://schema.datacite.org/), which allows Neotoma to provide dataset terms in a form that can be easily searched and returned by users around the globe, without the need for detailled knowledge about Neotoma or its database schema. The DOIs (e.g., [https://doi.org/10.21233/znex-sp94](https://doi.org/10.21233/znex-sp94)) return users to the Neotoma Landing Pages, where they can download records in JSON format and examine additional metadata about the records.
 
 ## Development
 

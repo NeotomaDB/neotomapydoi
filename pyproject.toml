@@ -55,7 +55,7 @@ dev = [
 testpaths = ["tests"]
 python_files = "test_*.py"
 python_functions = "test_*"
-adopts = "--doctest-modules"
+addopts = "--doctest-modules"
 
 [tool.ruff]
 # Same as Black.

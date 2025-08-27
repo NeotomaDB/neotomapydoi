@@ -6,7 +6,6 @@ from os import getenv
 
 DATASETID = 16
 
-
 def test_mint_test_doi():
     new_doi = neotomaDOI(datasetid=DATASETID, defaults="neotomadoi.yaml")
     new_doi.update()
