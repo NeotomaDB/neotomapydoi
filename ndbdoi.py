@@ -69,10 +69,12 @@ def main(args):
         new_doi.set_user(datacite_meta)
         if not args.mint:
             print("Using test mode.")
-            new_doi.test_mode()
+            new_doi.dataciteTest_mode()
         else:
             print("Using production mode.")
-            new_doi.prod_mode()
+            new_doi.dataciteProd_mode()
+        if not args.tank:
+            new_doi.databaseProd_mode()
         try:
             try:
                 new_doi.update()
@@ -91,7 +93,7 @@ def main(args):
                         {"datasetid": i, "doi": new_doi.identifiers, "meta": new_doi.meta},
                         f,
                     )
-                    a = f.write("\n")
+                    _ = f.write("\n")
                 print(f'  Minted new DOI: {new_doi.identifiers.get('identifier')}')
             elif old_activity > 0:
                 with open("updating_dois.log", "a", encoding="UTF-8") as f:
@@ -100,14 +102,14 @@ def main(args):
                         {"datasetid": i, "doi": new_doi.identifiers, "meta": new_doi.meta},
                         f,
                     )
-                    a = f.write("\n")
+                    _ = f.write("\n")
                 print(f'  Updated DOI: {new_doi.identifiers.get('identifier')}')
         except Exception as e:
             print("Whoops.")
             print(e)
             with open("failing_dois.log", "a", encoding="UTF-8") as f:
                 json.dump({"datasetid": i, "error": str(e)}, f)
-                a = f.write("\n")
+                _ = f.write("\n")
 
 if __name__ == '__main__':
     args = parse_args()

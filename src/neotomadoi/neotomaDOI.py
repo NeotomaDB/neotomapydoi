@@ -113,7 +113,7 @@ class neotomaDOI:
                 if self.identifiers:
                     self.get_activity()
                     self.get_meta()
-            except Exception as e:
+            except Exception:
                 traceback.print_exc()
                 raise ValueError(
                     f"Dataset {self.datasetid} is missing critical metadata values in the database."
@@ -132,7 +132,7 @@ class neotomaDOI:
         if not isinstance(cred, credentials):
             raise TypeError("Credentials must be of type neotomadoi.credential")
         self.client = cred
-        self.mode = mode
+        self.dataciteMode = mode
 
     def dataciteTest_mode(self):
         """_Set the DataCite API interactions to sadbox mode._
@@ -142,7 +142,7 @@ class neotomaDOI:
         """        
         if self.client is None:
             raise ValueError("You cannot change the mode without credentials [use neotomapydoi.credentials()].")
-        self.mode = dataciteTestMode.test
+        self.dataciteMode = dataciteTestMode.test
 
     def dataciteProd_mode(self):
         """_Set the DataCite API mode to production._
@@ -152,7 +152,27 @@ class neotomaDOI:
         """        
         if self.client is None:
             raise ValueError("You cannot use production mode without credentials.")
-        self.mode = dataciteTestMode.prod
+        self.dataciteMode = dataciteTestMode.prod
+
+    def databaseTank_mode(self):
+        """_Set the DataCite API interactions to sadbox mode._
+
+        Raises:
+            ValueError: _Ensure that credentials have been passed to the datacite object._
+        """        
+        if self.client is None:
+            raise ValueError("You cannot change the mode without credentials [use neotomapydoi.credentials()].")
+        self.databaseMode = databaseMode.tank
+
+    def databaseProd_mode(self):
+        """_Set the DataCite API mode to production._
+
+        Raises:
+            ValueError: _Raises a ValueError is the value of the self.client is not set using `object.set_user()`._
+        """        
+        if self.client is None:
+            raise ValueError("You cannot use production mode without credentials.")
+        self.databaseMode = databaseMode.prod
 
     def get_mode(self):
         """_Get the current DataCite DOI access mode (test or production)._
@@ -160,7 +180,7 @@ class neotomaDOI:
         Returns:
             _str_: _Prints the current mode name and URL path._
         """        
-        return print(f"mode: {self.mode.name}; URL: {self.mode.value}")
+        return print(f"mode: {self.dataciteMode.name}; URL: {self.dataciteMode.value}")
 
     def get_meta(self):
         """_Obtain the current DOI metadata for the record (if it exists).
@@ -172,17 +192,17 @@ class neotomaDOI:
         if self.identifiers:
             dois = self.identifiers.get("identifier")
             doi_call = requests.get(
-                self.mode.value + dois,
+                self.dataciteMode.value + dois,
                 headers={"Content-Type": "application/vnd.api+json"},
                 auth=(
-                    self.client.mode(self.mode).get("username"),
-                    self.client.mode(self.mode).get("pw"),
+                    self.client.mode(self.dataciteMode).get("username"),
+                    self.client.mode(self.dataciteMode).get("pw"),
                 ),
             )
             if doi_call.status_code == 200:
                 self.meta = doi_call.json().get("data").get("attributes")
             else:
-                if self.mode.name == 'prod':
+                if self.dataciteMode.name == 'prod':
                     print('Production mode is set, this DOI is not resolving.')
                     raise requests.exceptions.HTTPError(doi_call.json().get("errors"))
         else:
@@ -211,11 +231,11 @@ class neotomaDOI:
         }
         try:
             modifier = requests.put(
-                self.mode.value + self.identifiers.get("identifier"),
+                self.dataciteMode.value + self.identifiers.get("identifier"),
                 headers={"Content-Type": "application/vnd.api+json"},
                 auth=(
-                    self.client.mode(self.mode).get("username"),
-                    self.client.mode(self.mode).get("pw"),
+                    self.client.mode(self.dataciteMode).get("username"),
+                    self.client.mode(self.dataciteMode).get("pw"),
                 ),
                 data=dumps(payload),
             )
@@ -313,18 +333,18 @@ class neotomaDOI:
             # If there is no `meta` element, then we continue to ignore it.
             payload["attributes"]["event"] = "publish"
             payload["attributes"]["doi"] = self.identifiers.get("identifier")
-        payload["attributes"]["prefix"] = self.client.mode(self.mode).get("handle")
+        payload["attributes"]["prefix"] = self.client.mode(self.dataciteMode).get("handle")
         payload["attributes"]["url"] = (
             f"https://data.neotomadb.org/datasets/{self.datasetid}"
         )
         payload["attributes"]["version"] = "1.0"
         try:
             created = requests.post(
-                self.mode.value,
+                self.dataciteMode.value,
                 headers={"Content-Type": "application/vnd.api+json"},
                 auth=(
-                    self.client.mode(self.mode).get("username"),
-                    self.client.mode(self.mode).get("pw"),
+                    self.client.mode(self.dataciteMode).get("username"),
+                    self.client.mode(self.dataciteMode).get("pw"),
                 ),
                 data=dumps({"data": payload}),
             )
@@ -399,7 +419,7 @@ class neotomaDOI:
         payload["attributes"]["version"] = "1.0"
         try:
             created = requests.put(
-                self.mode.value,
+                self.dataciteMode.value,
                 headers={"Content-Type": "application/vnd.api+json"},
                 auth=(self.client.get("username"), self.client.get("password")),
                 data=dumps(f'{"data": {payload}}'),
