@@ -23,6 +23,7 @@ import deepdiff.diff as dd
 from json import dumps
 from warnings import warn
 from .dataciteTestMode import dataciteTestMode
+from .databaseMode import databaseMode
 from .credentials import credentials as credentials
 from .activity import activity
 
@@ -34,7 +35,8 @@ class neotomaDOI:
         else:
             self.defaults = {}
         self.datasetid = datasetid
-        self.mode = testMode.test
+        self.dataciteMode = dataciteTestMode.test
+        self.databaseMode = databaseMode.tank
         self.data = {
             "creators": None,
             "titles": None,
@@ -49,7 +51,7 @@ class neotomaDOI:
         self.meta = {}
         self.schema = None
         self.client = None
-        self.datacite_url = testMode.test
+        self.datacite_url = dataciteTestMode.test
 
     def __str__(self):
         return dumps(self.data)
@@ -95,7 +97,7 @@ class neotomaDOI:
             ValueError: _If critical metadata is missing, or is formatted incorrectly, then raise an error._
         """        
         if self.datasetid:
-            con = neo_connect(test=(self.mode.name == "test"))
+            con = neo_connect(tank=(self.databaseMode.name == "tank"))
             try:
                 self.data["creators"] = neo_creators(con, self)
                 self.data["contributors"] = neo_contributors(con, self)
@@ -117,12 +119,12 @@ class neotomaDOI:
                     f"Dataset {self.datasetid} is missing critical metadata values in the database."
                 )
 
-    def set_user(self, cred: credentials, mode: testMode = testMode.test):
+    def set_user(self, cred: credentials, mode: dataciteTestMode = dataciteTestMode.test):
         """_Set the user credentials for the DataCite API, depending on the mode._
 
         Args:
             cred (credentials): _A neotomapydoi.credentials() object._
-            mode (testMode, optional): _The API mode, either test or produxtion_. Defaults to testMode.test.
+            mode (dataciteTestMode, optional): _The API mode, either test or produxtion_. Defaults to dataciteTestMode.test.
 
         Raises:
             TypeError: _Raised if credentials are not passed in the proper format._
@@ -132,7 +134,7 @@ class neotomaDOI:
         self.client = cred
         self.mode = mode
 
-    def test_mode(self):
+    def dataciteTest_mode(self):
         """_Set the DataCite API interactions to sadbox mode._
 
         Raises:
@@ -140,9 +142,9 @@ class neotomaDOI:
         """        
         if self.client is None:
             raise ValueError("You cannot change the mode without credentials [use neotomapydoi.credentials()].")
-        self.mode = testMode.test
+        self.mode = dataciteTestMode.test
 
-    def prod_mode(self):
+    def dataciteProd_mode(self):
         """_Set the DataCite API mode to production._
 
         Raises:
@@ -150,7 +152,7 @@ class neotomaDOI:
         """        
         if self.client is None:
             raise ValueError("You cannot use production mode without credentials.")
-        self.mode = testMode.prod
+        self.mode = dataciteTestMode.prod
 
     def get_mode(self):
         """_Get the current DataCite DOI access mode (test or production)._
@@ -233,7 +235,7 @@ class neotomaDOI:
                                 SET recdatemodified=NOW()::timestamp
                                 RETURNING datasetid
                                 """
-                con = neo_connect(test=(self.mode.name == "test"))
+                con = neo_connect(tank=(self.databaseMode.name == "tank"))
                 with con.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
                     _ = cur.execute(
                         insertQuery,
@@ -244,7 +246,7 @@ class neotomaDOI:
                         },
                     )
                     con.commit()
-                con = neo_connect(test=(self.mode.name == "test"))
+                con = neo_connect(tank=(self.databaseMode.name == "tank"))
                 insertMeta = """INSERT INTO doi.doimeta(doi, meta, datasetid)
                                 VALUES (%(doi)s, %(meta)s, %(datasetid)s)
                                 ON CONFLICT (doi, datasetid) DO UPDATE
@@ -342,7 +344,7 @@ class neotomaDOI:
                                 SET recdatemodified=NOW()::timestamp
                                 RETURNING datasetid
                                 """
-                con = neo_connect(test=(self.mode.name == "test"))
+                con = neo_connect(tank=(self.databaseMode.name == "tank"))
                 with con.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
                     _ = cur.execute(
                         insertQuery,
@@ -415,7 +417,7 @@ class neotomaDOI:
                 insertQuery = """INSERT INTO ndb.datasetdoi (datasetid, doi, recdatecreated)
                                  VALUES (%(datasetid)s, %(identifier)s, NOW()::timestamp)
                                  RETURNING datasetid"""
-                con = neo_connect(test=(self.mode.name == "test"))
+                con = neo_connect(tank=(self.databaseMode.name == "tank"))
                 with con.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
                     cur.execute(
                         insertQuery,
@@ -430,7 +432,7 @@ class neotomaDOI:
 
     def freeze_data(self, con, force: bool = False):
         if self.datasetid:
-            con = neo_connect(test=(self.mode.name == "test"))
+            con = neo_connect(tank=(self.databaseMode.name == "tank"))
             query = """
                 SELECT * FROM doi.frozen
                 WHERE datasetid = %(datasetid)s"""

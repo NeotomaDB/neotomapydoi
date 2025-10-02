@@ -1,4 +1,5 @@
 from .dataciteTestMode import dataciteTestMode as dataciteTestMode
+from .databaseMode import databaseMode as databaseMode
 from .neo_connect import neo_connect as neo_connect
 from .neo_creators import neo_creators as neo_creators
 from .neotomaDOI import neotomaDOI as neotomaDOI
