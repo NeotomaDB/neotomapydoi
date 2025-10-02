@@ -1,6 +1,4 @@
-from neotomadoi import neotomaDOI, activity, credentials
-from dotenv import load_dotenv
-import pytest
+from neotomadoi import activity
 
 def test_activity(doiobj_prod):
     # We should expect that we can create the object and obtain activity information.
