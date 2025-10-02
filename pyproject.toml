@@ -1,12 +1,15 @@
 [project]
 name = "neotomadoi"
 version = "0.1.0"
-description = "Minting process for the Neotoma Paleoecology Database's DOIs using the DataCite API."
+description = "Minting process for the Neotoma Paleoecology Database's DOIs using the DataCite API and the Neotoma API."
 readme = {file = "README.md", content-type = "text/markdown"}
 license = "MIT"
-license-files=["LICENSE"]
+license-files=["LICENSE.md"]
 authors = [
-    { name = "Simon Goring", email = "goring@wisc.edu" }
+    { name = "Simon Goring", email = "goring@wisc.edu", orcid = "https://orcid.org/0000-0002-2700-4605" }
+]
+maintainers = [
+    { name = "Simon Goring", email = "goring@wisc.edu", orcid = "https://orcid.org/0000-0002-2700-4605" }
 ]
 requires-python = ">=3.12"
 keywords=["DataCite", "Postgresql", "metadata", "Open Science"]
@@ -38,8 +41,11 @@ dependencies = [
 ]
 
 [project.urls]
-Repository = "https://github.com/NeotomaDB/neotomapydoi"
+source = "https://github.com/NeotomaDB/neotomapydoi"
+funding = "https://nsf.gov/awardsearch/showAward?AWD_ID=2410961"
 Issues = "https://github.com/NeotomaDB/neotomapydoi/issues"
+download = "https://github.com/NeotomaDB/neotomapydoi/archive/refs/heads/main.zip"
+
 
 [build-system]
 requires = ["hatchling"]
@@ -55,7 +61,7 @@ dev = [
 testpaths = ["tests"]
 python_files = "test_*.py"
 python_functions = "test_*"
-addopts = "--doctest-modules"
+addopts = "--doctest-modules --maxfail=1 --cov=neotomadoi"
 
 [tool.ruff]
 # Same as Black.

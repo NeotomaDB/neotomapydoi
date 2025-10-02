@@ -14,4 +14,4 @@ DOIs managed by DataCite have a [defined metadata schema](https://schema.datacit
 
 ## Contribution
 
-We welcome user contributions to this project.  All contributors are expected to follow the [code of conduct](https://github.com/Neotomadb/api_nodetest/blob/master/code_of_conduct.md).  Contributors should fork this project and make a pull request indicating the nature of the changes and the intended utility.  Further information for this workflow can be found on the GitHub [Pull Request Tutorial webpage](https://help.github.com/articles/about-pull-requests/).
+We welcome user contributions to this project.  All contributors are expected to follow the [code of conduct](code_of_conduct.md). Contribution guidelines can be found in the [Contributing](CONTRIBUTING.md) document. Contributors should fork this project and make a pull request indicating the nature of the changes and the intended utility.  Further information for this workflow can be found on the GitHub [Pull Request Tutorial webpage](https://help.github.com/articles/about-pull-requests/).
