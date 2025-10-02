@@ -8,3 +8,5 @@ src/neotomadoi/__pycache__/
 *.log
 
 tests/__pycache__/
+
+__pycache__/

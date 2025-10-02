@@ -1,5 +1,6 @@
 import psycopg2
 import psycopg2.extras
+from psycopg2.errors import TransactionTimeout, InvalidTextRepresentation, UndefinedFunction, InFailedSqlTransaction
 
 
 def neo_creators(con: psycopg2.connect, self) -> list:
@@ -27,19 +28,30 @@ def neo_creators(con: psycopg2.connect, self) -> list:
         GROUP BY cts.contactid, dspi.piorder
         ORDER BY dspi.piorder;
     """
-    with con.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-        cur.execute(query, {"datasetid": self.datasetid})
-        response = cur.fetchall()
-        creators = []
-        if len(response) == 0:
-            creators = [{"name": "None listed"}]
-        for i in response:
-            creator = dict(i)
-            if creator.get("name") is None:
-                creator["name"] = "None listed"
-            if not all(
-                [i.get("nameIdentifier") for i in creator.get("nameIdentifiers")]
-            ):
-                _ = creator.pop("nameIdentifiers", None)
-            creators.append({k:creator[k] for k in creator.keys() if k != 'piorder'})
+    try:
+        with con.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+            cur.execute(query, {"datasetid": self.datasetid})
+            response = cur.fetchall()
+            creators = []
+            if len(response) == 0:
+                creators = [{"name": "None listed"}]
+            for i in response:
+                creator = dict(i)
+                if creator.get("name") is None:
+                    creator["name"] = "None listed"
+                if not all(
+                    [i.get("nameIdentifier") for i in creator.get("nameIdentifiers")]
+                ):
+                    _ = creator.pop("nameIdentifiers", None)
+                creators.append({k:creator[k] for k in creator.keys() if k != 'piorder'})
+    except TransactionTimeout as error:
+        print("Database timeout error in neo_creators:")
+        print(error)
+    except (InvalidTextRepresentation, UndefinedFunction) as error:
+        print(f"Dataset ID type is not integer. You passed {self.datasetid}:")
+        print(error)
+    except InFailedSqlTransaction as error:
+        print("The database is in an invalid state. Rolling back operations:")
+        con.rollback()
+        print(error)
     return creators

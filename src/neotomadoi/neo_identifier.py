@@ -1,7 +1,6 @@
 import psycopg2
 import psycopg2.extras
 
-
 def neo_identifier(con: psycopg2.connect, self) -> object:
     """_Return the dataset identifier (DOI)_
 

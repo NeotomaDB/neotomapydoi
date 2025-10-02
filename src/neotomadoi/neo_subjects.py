@@ -49,6 +49,8 @@ def neo_subjects(con: psycopg2.connect, self) -> object:
                 ]
             except Exception as e:
                 print(e)
+                subjects = []
+                pass
     if self.defaults:
         subjects = subjects + self.defaults["subjects"]
     subjects = [json.loads(i) for i in set([json.dumps(i) for i in subjects])]

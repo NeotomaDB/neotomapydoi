@@ -2,6 +2,7 @@ import yaml
 from datetime import datetime, timedelta
 import jsonschema
 from json import load
+import traceback
 from .neo_connect import neo_connect
 from .neo_contributors import neo_contributors
 from .neo_creators import neo_creators
@@ -21,8 +22,8 @@ from psycopg2.extras import Json
 import deepdiff.diff as dd
 from json import dumps
 from warnings import warn
-from .testMode import testMode
-from .credentials import credentials
+from .dataciteTestMode import dataciteTestMode
+from .credentials import credentials as credentials
 from .activity import activity
 
 class neotomaDOI:
@@ -110,7 +111,8 @@ class neotomaDOI:
                 if self.identifiers:
                     self.get_activity()
                     self.get_meta()
-            except Exception:
+            except Exception as e:
+                traceback.print_exc()
                 raise ValueError(
                     f"Dataset {self.datasetid} is missing critical metadata values in the database."
                 )
@@ -178,7 +180,9 @@ class neotomaDOI:
             if doi_call.status_code == 200:
                 self.meta = doi_call.json().get("data").get("attributes")
             else:
-                raise requests.exceptions.HTTPError(doi_call.json().get("errors"))
+                if self.mode.name == 'prod':
+                    print('Production mode is set, this DOI is not resolving.')
+                    raise requests.exceptions.HTTPError(doi_call.json().get("errors"))
         else:
             raise ValueError("There is no DOI currently associated with this object.")
 
@@ -261,9 +265,15 @@ class neotomaDOI:
             print(e)
 
     def get_activity(self):
-        self.activity = activity(doi=self.identifiers.get("identifier"))
+        """_Pull in the DataCite DOI activity_
+        If the dataset has a prior identifier, then we request this history
+        of that dataset from DataCite and add it to the `activity` property. 
+        """        
+        if self.identifiers:
+            self.activity = activity(doi=self.identifiers.get("identifier"))
 
     def mint_doi(self, publish=True):
+        # If we're `minting` but the dataset already has a DOI, then we need to update.
         if self.identifiers:
             self.get_meta()
             if self.meta.get("isActive", False):
@@ -277,11 +287,12 @@ class neotomaDOI:
                 return None
         outcome = None
         try:
+            # I'm not sure what was going on here. . . 
             self.data["version"] = "1.0"
             outcome = self.validate()
         except Exception:
-            outcome = True
-        if outcome:
+            outcome = False
+        if not outcome:
             print("Validation error. Check with the `validate()` method.")
             return None
         payload = {"type": "dois", "attributes": self.data}
