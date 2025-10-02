@@ -1,19 +1,18 @@
 from enum import Enum
 
-class testMode(Enum):
-    """_A class to manage connections to Neotoma and DataCite_
+class dataciteTestMode(Enum):
+    """_A class to manage connections to DataCite, connecting to either the production API service or the sandbox._
 
     Examples:
-    >>> test = testMode.test
+    >>> test = dataciteTestMode.test
     >>> test.value
     'https://api.test.datacite.org/dois/'
-    >>> prod = testMode.prod
+    >>> prod = dataciteTestMode.prod
     >>> prod
-    <testMode.prod: 'https://api.datacite.org/dois/'>
+    <dataciteTestMode.prod: 'https://api.datacite.org/dois/'>
 
     Args:
         Enum (_string_): _An enumerated object, with either `test`or `prod` modes._
     """    
     test = "https://api.test.datacite.org/dois/"
     prod = "https://api.datacite.org/dois/"
-
