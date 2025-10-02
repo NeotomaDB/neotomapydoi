@@ -39,7 +39,7 @@ def doiobj_prod(test_dataset_id, dcite_credentials):
     new_doi = neotomaDOI(datasetid=test_dataset_id, defaults="neotomadoi.yaml")
     datacite_meta = dcite_credentials
     new_doi.set_user(datacite_meta)
-    new_doi.prod_mode()
+    new_doi.dataciteProd_mode()
     return new_doi
 
 @pytest.fixture
@@ -47,5 +47,5 @@ def doiobj_test(test_dataset_id, dcite_credentials):
     new_doi = neotomaDOI(datasetid=test_dataset_id, defaults="neotomadoi.yaml")
     datacite_meta = dcite_credentials
     new_doi.set_user(datacite_meta)
-    new_doi.test_mode()
+    new_doi.dataciteTest_mode()
     return new_doi

@@ -1,5 +1,5 @@
 import pytest
-from neotomadoi import neotomaDOI, testMode, credentials
+from neotomadoi import dataciteTestMode, neotomaDOI, credentials
 from random import choices
 from string import digits, ascii_lowercase
 
@@ -24,13 +24,13 @@ def test_user_cred():
     assert isinstance(user_cred, credentials)
     with pytest.raises(Exception):
         credentials({})
-    assert isinstance(user_cred.mode(testMode.test), dict)
-    assert isinstance(user_cred.mode(testMode.prod), dict)
+    assert isinstance(user_cred.mode(dataciteTestMode.test), dict)
+    assert isinstance(user_cred.mode(dataciteTestMode.prod), dict)
     assert all(
-        [i in ["username", "pw", "handle"] for i in user_cred.mode(testMode.prod)]
+        [i in ["username", "pw", "handle"] for i in user_cred.mode(dataciteTestMode.prod)]
     )
     assert all(
-        [i in ["username", "pw", "handle"] for i in user_cred.mode(testMode.test)]
+        [i in ["username", "pw", "handle"] for i in user_cred.mode(dataciteTestMode.test)]
     )
 
 
