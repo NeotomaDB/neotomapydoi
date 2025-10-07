@@ -15,3 +15,16 @@ DOIs managed by DataCite have a [defined metadata schema](https://schema.datacit
 ## Contribution
 
 We welcome user contributions to this project.  All contributors are expected to follow the [code of conduct](code_of_conduct.md). Contribution guidelines can be found in the [Contributing](CONTRIBUTING.md) document. Contributors should fork this project and make a pull request indicating the nature of the changes and the intended utility.  Further information for this workflow can be found on the GitHub [Pull Request Tutorial webpage](https://help.github.com/articles/about-pull-requests/).
+
+## Using `neotomadoi`
+
+### Requirements
+
+* Python 3.12 in a Linux environment.
+* A valid connection to the Neotoma Paleoecology Database, either in the cloud (AWS) or locally (see the Neotoma Snapshot documentation)
+* All packages as defined in the `pyproject.toml` file (use `uv` and the `uv install` command)
+* Valid DataCite credentials
+
+### Credential Storage
+
+All credentials should be stored within a `.env` file. We provide [`.env-template`](.env-template) as an example. The user should modify this file to reflect their own credentials and connection strings for these environment variables.
