@@ -1,3 +1,23 @@
+
+"""Neotoma DOI Minting Software
+
+This script is used from the commandline to mint, or check DOIs minted by Neotoma using DataCite.
+
+The tool accepts either a time period (e.g. 2 weeks) or a string of comma separated dataset
+identifiers and then generates dataset metadata, and publishes, or tests the publishing of the
+datasets to DataCite.
+
+The program outputs log files for each DOI minted. They will report the dataset ID, the DOI, and 
+the metadata attached to the DOI. There is also an Error reporting log that is produced.
+
+The script can be run as:
+
+* `python ndbdoi.py -w 2 -m`
+    * Generate DOI metadata for all datasets generated over the past two weeks (`-w 2`) and publish to DataCite (`-m`).
+* `python ndbdoi.py -d 12,13,14 -t`
+    * Generate DOI metadata for datasets (`-d 12,13,14`) using data from the holding tank (`-t`), but do not publish.
+"""
+
 import neotomadoi
 from dotenv import load_dotenv
 import os
@@ -5,13 +25,19 @@ import json
 import psycopg2
 import psycopg2.extras
 import argparse
+from datetime import datetime, timezone
 
-def parse_args():
+def parse_args():  
+    """_Parse arguments if the script is run from the commandline._
+
+    Returns:
+        _type_: _description_
+    """  
     parser = argparse.ArgumentParser(prog = "neotomadoi",
                                     description = "A DataCite DOI minter for Neotoma.")
     parser.add_argument('-t', '--tank',
                         help='Use the Holding Tank (not Neotoma Proper).',
-                        action="store_true")
+                        action = "store_true")
     parser.add_argument('-m', '--mint',
                         action = "store_true",
                         default = False,
@@ -20,6 +46,14 @@ def parse_args():
                         action='version',
                         version='%(prog)s 1.0',
                         help='Show the program\'s version number and exit.')
+    parser.add_argument('-o', '--output',
+                        default = 'minting',
+                        nargs = 1,
+                        type = str,
+                        help = 'Provide an output file prefix for the minting report (including the log, errors and updates).')
+    parser.add_argument('-u', '--update',
+                        action = "store_true",
+                        help = 'Update the DataCite Metadata if a DOI record exists already? (Default is False, records will not be updated)')
     group = parser.add_mutually_exclusive_group()
     group.add_argument('-w', '--weeks',
                         type = int,
@@ -34,7 +68,26 @@ def parse_args():
     args = parser.parse_args()
     return args
 
+def printargs(args):
+    runstart = datetime.now(timezone.utc).isoformat() 
+    print("*** Neotoma DOI Generator ***")
+    print(f"Run beginning {runstart}")
+    
+    if args.tank:
+        print(" * Running against the Neotoma Holding Tank")
+    else:
+        print(" * Running against the Neotoma Production Database")
+    
+    if args.mint:
+        print(" * Datasets will be minted on DataCite")
+    else:
+        print(" * Datasets will be run against the DataCite Sandbox")
+    if args.datasets:
+        print(f" * User has defined datasets to be run against:\n\t\t{args.datasets}")
+
+
 def main(args):
+    runstart = datetime.now(timezone.utc).isoformat()
     load_dotenv()
 
     DCITE = json.loads(os.getenv("DCITE"))
@@ -44,14 +97,14 @@ def main(args):
 
     # Do we use Neotoma proper or the holding tank?
     if args.tank:
-        con = neotomadoi.neo_connect(test=True)
+        con = neotomadoi.neo_connect(tank = True)
     else:
-        con = neotomadoi.neo_connect(test=False)
+        con = neotomadoi.neo_connect(tank = False)
 
     if args.datasets:
         with open('src/neotomadoi/sql/ds_datasetids.sql', 'r') as file:
             query = file.read()
-            datasetids = args.mintdataset[0]
+            datasetids = args.datasets[0]
     else:
         with open('src/neotomadoi/sql/ds_timeslice.sql', 'r') as file:
             query = file.read()
@@ -61,62 +114,68 @@ def main(args):
             datasetids = cur.fetchall()
             datasetids = [i[0] for i in datasetids]
 
-    print(args)
-
     for i in datasetids:
         print(f"Working on {i}")
         new_doi = neotomadoi.neotomaDOI(datasetid=i, defaults="neotomadoi.yaml")
         new_doi.set_user(datacite_meta)
+
         if not args.mint:
             print("Using test mode.")
             new_doi.dataciteTest_mode()
         else:
             print("Using production mode.")
             new_doi.dataciteProd_mode()
+
         if not args.tank:
+            print("Using the Neotoma Production Database.")
             new_doi.databaseProd_mode()
+        else:
+            print("Using the Neotoma Holding Tank.")
         try:
-            try:
-                new_doi.update()
-            except ValueError as e:
-                if "critical" in str(e):
-                    new_doi.freeze_data(con)
-                    new_doi.update()
+            if not new_doi.is_frozen():
+                print("Freezing the records data.")
+                new_doi.freeze_data()
+            new_doi.update()
             _ = new_doi.validate()
             new_doi.get_activity()
             old_activity = len(new_doi.activity)
-            new_doi.mint_doi(publish=args.mint)
-            if old_activity == 0:
-                with open("minting_dois.log", "a", encoding="UTF-8") as f:
-                    new_doi.get_meta()
-                    json.dump(
-                        {"datasetid": i, "doi": new_doi.identifiers, "meta": new_doi.meta},
-                        f,
-                    )
-                    _ = f.write("\n")
-                print(f'  Minted new DOI: {new_doi.identifiers.get('identifier')}')
-            elif old_activity > 0:
-                with open("updating_dois.log", "a", encoding="UTF-8") as f:
-                    new_doi.get_meta()
-                    json.dump(
-                        {"datasetid": i, "doi": new_doi.identifiers, "meta": new_doi.meta},
-                        f,
-                    )
-                    _ = f.write("\n")
-                print(f'  Updated DOI: {new_doi.identifiers.get('identifier')}')
+            if not new_doi.identifiers or args.update:
+                new_doi.mint_doi(publish=args.mint)
+                if old_activity == 0:
+                    with open(f"{args.output}_{runstart}_published.log", "a", encoding="UTF-8") as f:
+                        new_doi.get_meta()
+                        json.dump(
+                            {"datasetid": i, "doi": new_doi.identifiers, "meta": new_doi.data},
+                            f,
+                        )
+                        _ = f.write("\n")
+                    print(f'  Minted new DOI: {new_doi.identifiers.get('identifier')}')
+                elif old_activity > 0:
+                    with open(f"{args.output}_{runstart}_updated.log", "a", encoding="UTF-8") as f:
+                        new_doi.get_meta()
+                        json.dump(
+                            {"datasetid": i, "doi": new_doi.identifiers, "meta": new_doi.data},
+                            f,
+                        )
+                        _ = f.write("\n")
+                    print(f'  Updated DOI: {new_doi.identifiers.get('identifier')}')
         except Exception as e:
             print("Whoops.")
             print(e)
-            with open("failing_dois.log", "a", encoding="UTF-8") as f:
+            with open(f"{args.output}_{runstart}_errored.log", "a", encoding="UTF-8") as f:
                 json.dump({"datasetid": i, "error": str(e)}, f)
                 _ = f.write("\n")
 
 if __name__ == '__main__':
     args = parse_args()
 else:
-    args = {'tank': False,
-            'mint': False,
-            'weeks': [1],
-            'datasets': None}
+    # For testing in the Python environment:
+    class args:
+        tank = False
+        mint = False
+        weeks = [1]
+        datasets = None
+        output = 'minting'
+        update = False
 
 main(args)
