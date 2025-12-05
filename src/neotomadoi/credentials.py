@@ -1,4 +1,4 @@
-from .testMode import testMode
+from .dataciteTestMode import dataciteTestMode
 
 class credentials:
     """_An object to manage credentials for the DOI minting flow._
@@ -20,11 +20,11 @@ class credentials:
         ), "You must have production and test data in your client credentials."
         self.data = datacite_meta
 
-    def mode(self, mode: testMode = testMode.test):
+    def mode(self, mode: dataciteTestMode = dataciteTestMode.test):
         """_Change the interaction mode for the DOI system._
 
         Args:
-            mode (testMode, optional): _Change or set the mode for DOI interaction_. Defaults to testMode.test.
+            mode (dataciteTestMode, optional): _Change or set the mode for DOI interaction_. Defaults to testMode.test.
 
         Returns:
             _type_: _Returns the DOI interaction mode._

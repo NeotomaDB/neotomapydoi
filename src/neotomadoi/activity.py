@@ -1,18 +1,30 @@
+"""A module to track changes to an individual DOI, to manage versioning, and to provide some 
+   summary functions to understand how the DOI metadata content has changed over time. This
+   module can be used outside the rest of the `neotomaDOI` class."""
+
 from requests import get, RequestException
 from datetime import datetime
 
 class activity:
-    """_An activity component, to return past activity for a DOI object._
-    """    
+    """An activity component, to return past activity for a DOI object.
+
+    This class contains metadata, from the DataCite Activities endpoint at 
+    [https://api.datacite.org/dois/{doi}/activities](). The activities endpoint is
+    fully documented at [https://support.datacite.org/reference/get_activities]().
+
+    Attributes:
+        activity (dict): A dict representation of the JSON object returned from DataCite.
+
+    """
     def __init__(self, doi: str):
         """_Create a new activity object._
         
-        Examples:
-        >>> check = activity("10.21233/1qx3-a004")
-        >>> check
-        <activity class: 3 records - from: 2020-07-07/29/20 to 2025-05-05/07/25>
-        >>> isinstance(check.activity, list)
-        True
+        Example:
+                >>> check = activity("10.21233/1qx3-a004")
+                >>> check
+                <activity class: 3 records - from: 2020-07-07/29/20 to 2025-05-05/07/25>
+                >>> isinstance(check.activity, list)
+                True
 
         Args:
             doi (str): _A valid DOI string._
