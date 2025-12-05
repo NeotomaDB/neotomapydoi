@@ -4,4 +4,21 @@ theme:
   name: material
 
 plugins:
-- mkdocstrings
+- mkdocstrings:
+    handlers:
+      python:
+        options:
+            # Tables are generally too large, lists will fix this.
+            backlinks: tree
+            show_bases: true
+            show_submodules: false
+            show_source: false
+            show_root_heading: true
+            show_root_full_path: true
+            filters:
+              - "!^_"  # Hide private members
+            members: true  # Show members
+            heading_level: 3
+            show_docstring_examples: true
+            merge_init_into_class: true
+            
