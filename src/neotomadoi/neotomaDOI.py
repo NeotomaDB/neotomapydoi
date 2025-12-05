@@ -28,6 +28,38 @@ from .credentials import credentials as credentials
 from .activity import activity
 
 class neotomaDOI:
+    """Manages DOI metadata generation and registration with DataCite for Neotoma datasets.
+    
+    This class handles the complete workflow of creating, validating, and publishing
+    Digital Object Identifiers (DOIs) for paleological datasets in the Neotoma database.
+    The `neotomaDOI()` class interfaces with both the Neotoma database (to extract metadata)
+    and the DataCite API (to register DOIs).
+    
+    Typical Workflow:
+        1. Create instance with a dataset ID
+        2. Set credentials with set_user()
+        3. Call update() to populate metadata from database
+        4. Validate the metadata with validate()
+        5. Freeze the dataset with freeze_data()
+        6. Mint or update the DOI with mint_doi()
+    
+    Attributes:
+        datasetid (int): The Neotoma dataset identifier
+        data (dict): The DataCite metadata object (follows DataCite schema)
+        identifiers (dict): The DOI identifier info (if one exists)
+        meta (dict): Current DOI metadata from DataCite (if DOI exists)
+        activity (list): History of DOI events from DataCite
+        dataciteMode (dataciteTestMode): API mode (test or prod)
+        databaseMode (databaseMode): Database mode (tank or prod)
+        strict (bool): If True, raises errors for data state issues; if False, warns only
+        
+    Examples:
+        >>> doi = neotomaDOI(datasetid=12345, defaults="neotomadoi.yaml")
+        >>> doi.set_user(credentials_obj)
+        >>> doi.update()  # Fetch metadata from database
+        >>> doi.validate()  # Check against DataCite schema
+        >>> doi.mint_doi()  # Publish to DataCite
+    """  
     def __init__(self, datasetid: int, defaults: str = None):
         if defaults:
             with open(defaults, "r") as file:
@@ -52,6 +84,9 @@ class neotomaDOI:
         self.schema = None
         self.client = None
         self.datacite_url = dataciteTestMode.test
+        self.strict = True
+        self._updated = False
+        self._data_hash = None
 
     def __str__(self):
         return dumps(self.data)
@@ -91,33 +126,103 @@ class neotomaDOI:
         return True
 
     def update(self):
-        """_Add relevant metadata for DOI minting rom the remote database._
+        """_Add relevant metadata for DOI minting from the remote database._
 
         Raises:
             ValueError: _If critical metadata is missing, or is formatted incorrectly, then raise an error._
-        """        
-        if self.datasetid:
-            con = neo_connect(tank=(self.databaseMode.name == "tank"))
+        """
+
+        assert self.datasetid is not None, "The datasetid must be defined before calling .update()"
+
+        con = neo_connect(tank=(self.databaseMode.name == "tank"))
+
+        # Track what we're doing for better error messages
+        metadata_steps = [
+            ("creators", lambda: neo_creators(con, self)),
+            ("contributors", lambda: neo_contributors(con, self)),
+            ("titles", lambda: [neo_title(con, self)]),
+            ("subjects", lambda: neo_subjects(con, self)),
+            ("geoLocations", lambda: neo_location(con, self)),
+            ("identifiers", lambda: neo_identifier(con, self)),
+            ("relatedIdentifiers", lambda: neo_relatedIdentifiers(con, self)),
+            ("dates", lambda: neo_dates(con, self)),
+            ("sizes", lambda: neo_size(con, self)),
+            ("descriptions", lambda: neo_description(con, self)),
+        ]
+
+        for field_name, fetch_func in metadata_steps:
             try:
-                self.data["creators"] = neo_creators(con, self)
-                self.data["contributors"] = neo_contributors(con, self)
-                self.data["titles"] = [neo_title(con, self)]
-                self.data["subjects"] = neo_subjects(con, self)
-                self.data["geoLocations"] = neo_location(con, self)
-                self.identifiers = neo_identifier(con, self)
-                self.data["relatedIdentifiers"] = neo_relatedIdentifiers(con, self)
-                self.data["dates"] = neo_dates(con, self)
-                self.data["sizes"] = neo_size(con, self)
-                self.data["descriptions"] = neo_description(con, self)
-                self.activity = None
-                if self.identifiers:
-                    self.get_activity()
-                    self.get_meta()
-            except Exception:
-                traceback.print_exc()
+                if field_name == "identifiers":
+                    self.identifiers = fetch_func()
+                else:
+                    self.data[field_name] = fetch_func()
+            except Exception as e:
                 raise ValueError(
-                    f"Dataset {self.datasetid} is missing critical metadata values in the database."
-                )
+                    f"Dataset {self.datasetid}: Failed to fetch '{field_name}' metadata. "
+                    f"Error: {type(e).__name__}: {str(e)}"
+                ) from e
+        
+        self.activity = None
+
+        if self.identifiers:
+            try:
+                self.get_activity()
+            except Exception as e:
+                raise ValueError(
+                f"Dataset {self.datasetid}: Failed to fetch '{field_name}' metadata. "
+                f"Error: {type(e).__name__}: {str(e)}"
+            ) from e
+
+            try:
+                self.get_meta()
+            except Exception as e:
+                pass
+
+                # Identify the data as having been remotely updated, and add the hash.
+            self._updated = True
+            self._data_hash = hash(str(self.data))
+            
+    def _data_changed_since_update(self):
+        """_Check if self.data has been modified since update() was called._
+
+        Returns:
+            _bool_: _A boolean, letting us know whether the data has been changed._
+        """
+        if not self._updated:
+            return None
+        current_hash = hash(str(self.data))
+        return current_hash != self._data_hash
+
+    def _check_data_state(self, operation: str):
+        """Check that the internal data is in valid state for minting/updating.
+
+        We have a `strict` mode for this process, where, if a dataset has been changed since
+        the dataset metadata got an `update()`, it cannot be minted or have its DOI updated. This prevents
+        programmatic changes to the object metadata (self.data) from propagating through the data network.
+        
+        Args:
+            operation: Name of operation being performed (for error messages)
+            
+        Raises:
+            AssertionError: In strict mode, if data state is invalid
+            
+        Warns:
+            UserWarning: In non-strict mode, if data state is questionable
+        """
+        if not self._updated:
+            msg = f"{operation} called without calling update(). Ensure self.data is properly populated."
+            if self.strict:
+                raise AssertionError(msg)
+            else:
+                warn(msg, UserWarning)
+    
+        data_changed = self._data_changed_since_update()
+        if data_changed:
+            msg = f"{operation} called after manual data modification. Data may not match database state."
+            if self.strict:
+                raise AssertionError(msg)
+            else:
+                warn(msg, UserWarning)
 
     def set_user(self, cred: credentials, mode: dataciteTestMode = dataciteTestMode.test):
         """_Set the user credentials for the DataCite API, depending on the mode._
@@ -188,16 +293,14 @@ class neotomaDOI:
         Raises:
             ValueError: _Raises a value error when there is no DOI identifier associated with the data object._
             requests.exceptions.HTTPError: _Passes along any API errors returned from DataCite associated with the identifier provided._
-        """        
+        """
+        
         if self.identifiers:
             dois = self.identifiers.get("identifier")
             doi_call = requests.get(
                 self.dataciteMode.value + dois,
-                headers={"Content-Type": "application/vnd.api+json"},
-                auth=(
-                    self.client.mode(self.dataciteMode).get("username"),
-                    self.client.mode(self.dataciteMode).get("pw"),
-                ),
+                headers={"Content-Type": "application/vnd.api+json",
+                         "User-Agent": "Neotoma Paleoecology Database DOI System/0.1.0 (Linux; Python v3.11) email:goring@wisc.edu"},
             )
             if doi_call.status_code == 200:
                 self.meta = doi_call.json().get("data").get("attributes")
@@ -205,10 +308,20 @@ class neotomaDOI:
                 if self.dataciteMode.name == 'prod':
                     print('Production mode is set, this DOI is not resolving.')
                     raise requests.exceptions.HTTPError(doi_call.json().get("errors"))
+                else:
+                    # Here, if the error is 404, then it's not found. More than likely we need to
+                    # actually check the production datacite location.
+                    # raise requests.exceptions.HTTPError(doi_call.json().get("errors"))
+                    _ = 10
         else:
             raise ValueError("There is no DOI currently associated with this object.")
 
     def update_doi(self):
+        assert self.client is not None, "Requires a valid DataCite client. Must call `set_user()` before updating."
+        assert self.identifiers is not None, "Cannot update - no existing DOI found. Use mint_doi() instead"
+        assert self.data.get("creators") is not None, "Requires valid metadata. Call update() to populate DataCite metadata before minting."
+        self._check_data_state("mint_doi()")
+
         outcome = None
         try:
             outcome = self.validate()
@@ -256,32 +369,35 @@ class neotomaDOI:
                                 RETURNING datasetid
                                 """
                 con = neo_connect(tank=(self.databaseMode.name == "tank"))
-                with con.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-                    _ = cur.execute(
-                        insertQuery,
-                        {
-                            "datasetid": self.datasetid,
-                            "identifier": self.identifiers.get("identifier"),
-                            "publish": True,
-                        },
-                    )
-                    con.commit()
-                con = neo_connect(tank=(self.databaseMode.name == "tank"))
-                insertMeta = """INSERT INTO doi.doimeta(doi, meta, datasetid)
-                                VALUES (%(doi)s, %(meta)s, %(datasetid)s)
-                                ON CONFLICT (doi, datasetid) DO UPDATE
-                                    SET meta = EXCLUDED.meta
-                                    RETURNING datasetid;"""
-                with con.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-                    _ = cur.execute(
-                        insertMeta,
-                        {
-                            "meta": Json(self.meta),
-                            "datasetid": self.datasetid,
-                            "doi": self.identifiers.get("identifier"),
-                        },
-                    )
-                    con.commit()
+                if self.dataciteMode.name == 'prod' or self.databaseMode.name == "tank":
+                    # We only add to the table if we're in DataCite production mode, or
+                    # if the database is in Tank mode (in which case we can add whatever).
+                    with con.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                        _ = cur.execute(
+                            insertQuery,
+                            {
+                                "datasetid": self.datasetid,
+                                "identifier": self.identifiers.get("identifier"),
+                                "publish": True,
+                            },
+                        )
+                        con.commit()
+                    con = neo_connect(tank=(self.databaseMode.name == "tank"))
+                    insertMeta = """INSERT INTO doi.doimeta(doi, meta, datasetid)
+                                    VALUES (%(doi)s, %(meta)s, %(datasetid)s)
+                                    ON CONFLICT (doi, datasetid) DO UPDATE
+                                        SET meta = EXCLUDED.meta
+                                        RETURNING datasetid;"""
+                    with con.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                        _ = cur.execute(
+                            insertMeta,
+                            {
+                                "meta": Json(self.meta),
+                                "datasetid": self.datasetid,
+                                "doi": self.identifiers.get("identifier"),
+                            },
+                        )
+                        con.commit()
                 self.get_activity()
         except Exception as e:
             print(e)
@@ -293,8 +409,16 @@ class neotomaDOI:
         """        
         if self.identifiers:
             self.activity = activity(doi=self.identifiers.get("identifier"))
+        else:
+            self.activity = []
 
-    def mint_doi(self, publish=True):
+    def mint_doi(self):
+
+        assert self.client is not None, "Must call set_user() before minting. Use neotomadoi.credentials() to set credentials."
+        assert self.data.get("creators") is not None, "Must call update() before minting to populate metadata"
+        
+        self._check_data_state("mint_doi()")
+
         # If we're `minting` but the dataset already has a DOI, then we need to update.
         if self.identifiers:
             self.get_meta()
@@ -302,7 +426,7 @@ class neotomaDOI:
                 # If a DOI has been minted and the DOI is active, update the DOI.
                 self.update_doi()
                 return None
-            elif self.meta.get("isActive", True) is False and publish is True:
+            elif self.meta.get("isActive", True) is False and self.dataciteMode.name == 'prod':
                 self.update_doi()
                 return None
             else:
@@ -325,7 +449,7 @@ class neotomaDOI:
                 if i.get("dateType") == "Submitted"
             ]
         )
-        if datetime.now() - date > timedelta(days=2) and publish is True:
+        if datetime.now() - date > timedelta(days=2) and self.dataciteMode.name == 'prod':
             # We're publishing and the dataset is old enough.
             payload["attributes"]["event"] = "publish"
         if self.meta.get("isActive", True) is False:
@@ -356,38 +480,46 @@ class neotomaDOI:
                     "identifier": created.json().get("data").get("id"),
                     "identifierType": "DOI",
                 }
-                self.get_meta()
-                insertQuery = """INSERT INTO ndb.datasetdoi (datasetid, doi, published, recdatecreated)
-                                VALUES (%(datasetid)s, %(identifier)s, %(publish)s, NOW()::timestamp)
-                                ON CONFLICT (datasetid, doi)
-                                DO UPDATE
-                                SET recdatemodified=NOW()::timestamp
-                                RETURNING datasetid
-                                """
-                con = neo_connect(tank=(self.databaseMode.name == "tank"))
-                with con.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-                    _ = cur.execute(
-                        insertQuery,
-                        {
-                            "datasetid": self.datasetid,
-                            "identifier": self.identifiers.get("identifier"),
-                            "publish": publish,
-                        },
-                    )
-                    con.commit()
-                insertMeta = """INSERT INTO doi.doimeta(doi, meta, datasetid)
-                                VALUES (%(doi)s, %(meta)s, %(datasetid)s)
-                                ON CONFLICT (doi, datasetid) DO NOTHING;"""
-                with con.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-                    _ = cur.execute(
-                        insertMeta,
-                        {
-                            "meta": Json(self.meta),
-                            "datasetid": self.datasetid,
-                            "doi": self.identifiers.get("identifier"),
-                        },
-                    )
-                    con.commit()
+                try:
+                    self.get_meta()
+                except Exception as e:
+                    print('Failing from get_meta()')
+                    print(self.identifiers)
+                    print(e)
+                if self.dataciteMode.name == 'prod' or self.databaseMode.name == "tank":
+                    # We only add to the table if we're in DataCite production mode, or
+                    # if the database is in Tank mode (in which case we can add whatever).
+                    insertQuery = """INSERT INTO ndb.datasetdoi (datasetid, doi, published, recdatecreated)
+                                    VALUES (%(datasetid)s, %(identifier)s, %(publish)s, NOW()::timestamp)
+                                    ON CONFLICT (datasetid, doi)
+                                    DO UPDATE
+                                    SET recdatemodified=NOW()::timestamp
+                                    RETURNING datasetid
+                                    """
+                    con = neo_connect(tank=(self.databaseMode.name == "tank"))
+                    with con.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                        _ = cur.execute(
+                            insertQuery,
+                            {
+                                "datasetid": self.datasetid,
+                                "identifier": self.identifiers.get("identifier"),
+                                "publish": self.dataciteMode.name == 'prod',
+                            },
+                        )
+                        con.commit()
+                    insertMeta = """INSERT INTO doi.doimeta(doi, meta, datasetid)
+                                    VALUES (%(doi)s, %(meta)s, %(datasetid)s)
+                                    ON CONFLICT (doi, datasetid) DO NOTHING;"""
+                    with con.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                        _ = cur.execute(
+                            insertMeta,
+                            {
+                                "meta": Json(self.meta),
+                                "datasetid": self.datasetid,
+                                "doi": self.identifiers.get("identifier"),
+                            },
+                        )
+                        con.commit()
                 self.get_activity()
         except Exception:
             raise ValueError("Could not mint the dataset.")
@@ -450,7 +582,7 @@ class neotomaDOI:
         except Exception as e:
             print(e)
 
-    def freeze_data(self, con, force: bool = False):
+    def is_frozen(self):
         if self.datasetid:
             con = neo_connect(tank=(self.databaseMode.name == "tank"))
             query = """
@@ -458,8 +590,16 @@ class neotomaDOI:
                 WHERE datasetid = %(datasetid)s"""
             with con.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
                 cur.execute(query, {"datasetid": self.datasetid})
-                result = cur.fetchone()
-            if not result:
+                result = cur.fetchall()
+            if result:
+                return True
+            else:
+                return False
+
+    def freeze_data(self, force: bool = False):
+        if self.datasetid:
+            if not self.is_frozen():
+                con = neo_connect(tank=(self.databaseMode.name == "tank"))
                 freeze = """
                     INSERT INTO doi.frozen (datasetid, download, recdatecreated)
                     SELECT df.datasetid,
