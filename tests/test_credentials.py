@@ -53,8 +53,8 @@ def test_assign_creds():
     with pytest.raises(Exception):
         new_doi.set_user(cred=DCITE)
     new_doi.set_user(cred=user_cred)
-    assert new_doi.mode.name == "test"
-    assert new_doi.mode.value == "https://api.test.datacite.org/dois/"
+    assert new_doi.dataciteMode.name == "test"
+    assert new_doi.dataciteMode.value == "https://api.test.datacite.org/dois/"
     assert isinstance(new_doi.client, credentials)
     assert new_doi.client.data == DCITE
 
@@ -62,7 +62,7 @@ def test_assign_creds():
 def test_change_mode():
     new_doi = neotomaDOI(datasetid=DATASETID, defaults="neotomadoi.yaml")
     with pytest.raises(Exception):
-        new_doi.prod_mode()
+        new_doi.dataciteProd_mode()
     DCITE = {
         "user": "".join(choices(ascii_lowercase + digits, k=6)),
         "mode": {
@@ -78,8 +78,8 @@ def test_change_mode():
     }
     user_cred = credentials(DCITE)
     new_doi.set_user(user_cred)
-    assert new_doi.mode.name == "test"
-    new_doi.prod_mode()
-    assert new_doi.mode.name == "prod"
-    new_doi.test_mode()
-    assert new_doi.mode.name == "test"
+    assert new_doi.dataciteMode.name == "test"
+    new_doi.dataciteProd_mode()
+    assert new_doi.dataciteMode.name == "prod"
+    new_doi.dataciteTest_mode()
+    assert new_doi.dataciteMode.name == "test"

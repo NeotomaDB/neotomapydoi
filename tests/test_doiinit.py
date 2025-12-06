@@ -26,7 +26,7 @@ def test_init_empty():
     )
     assert new_doi.datasetid == DATASETID
     assert new_doi.data.get("publicationYear") == str(datetime.now().year)
-    assert new_doi.mode == dataciteTestMode.test
+    assert new_doi.dataciteMode == dataciteTestMode.test
 
 
 def test_init_defaults():
@@ -50,7 +50,7 @@ def test_init_defaults():
     )
     assert new_doi.datasetid == DATASETID
     assert isinstance(new_doi.data.get("types"), dict)
-    assert new_doi.mode == dataciteTestMode.test
+    assert new_doi.dataciteMode == dataciteTestMode.test
 
 
 def test_conn():

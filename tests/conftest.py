@@ -8,7 +8,7 @@ load_dotenv()
 
 @pytest.fixture
 def con_tester():
-    return neo_connect()
+    return neo_connect(tank = True)
 
 @pytest.fixture
 def dcite_credentials():
@@ -49,3 +49,10 @@ def doiobj_test(test_dataset_id, dcite_credentials):
     new_doi.set_user(datacite_meta)
     new_doi.dataciteTest_mode()
     return new_doi
+
+@pytest.fixture
+def doiobj_test_frozen(doiobj_test):
+    """DOI object with frozen data for testing."""
+    if not doiobj_test.is_frozen():
+        doiobj_test.freeze_data()
+    return doiobj_test
