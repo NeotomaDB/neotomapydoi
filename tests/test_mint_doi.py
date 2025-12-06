@@ -13,7 +13,7 @@ def test_mint_test_doi():
     load_dotenv()
     DCITE = loads(getenv("DCITE"))
     new_doi.set_user(cred=credentials(DCITE))
-    new_doi.test_mode()
+    new_doi.dataciteTest_mode()
     new_doi.mint_doi()
     assert isinstance(new_doi.identifiers, dict)
     assert new_doi.identifiers.get("identifierType") == "DOI"
@@ -31,7 +31,7 @@ def test_update_doi():
     load_dotenv()
     DCITE = loads(getenv("DCITE"))
     new_doi.set_user(cred=credentials(DCITE))
-    new_doi.test_mode()
+    new_doi.dataciteTest_mode()
     new_doi.get_meta()
     old_version = new_doi.meta.get("version")
     if not old_version:
@@ -59,7 +59,7 @@ def test_draft_doi():
     load_dotenv()
     DCITE = loads(getenv("DCITE"))
     new_doi.set_user(cred=credentials(DCITE))
-    new_doi.test_mode()
+    new_doi.dataciteTest_mode()
     new_doi.mint_doi(publish=False)
     assert new_doi.identifiers
     assert new_doi.meta.get("isActive") is False
