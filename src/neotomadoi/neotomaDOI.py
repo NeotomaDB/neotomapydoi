@@ -4,16 +4,7 @@ import jsonschema
 from json import load
 import traceback
 from .neo_connect import neo_connect
-from .neo_contributors import neo_contributors
-from .neo_creators import neo_creators
-from .neo_title import neo_title
-from .neo_subjects import neo_subjects
-from .neo_location import neo_location
-from .neo_identifier import neo_identifier
-from .neo_relatedIdentifiers import neo_relatedIdentifiers
-from .neo_dates import neo_dates
-from .neo_size import neo_size
-from .neo_description import neo_description
+from .fetch_metadata import neo_contributors, neo_creators, neo_title, neo_subjects, neo_location, neo_identifier, neo_relatedIdentifiers, neo_dates, neo_size, neo_description
 from datacite import schema45
 import requests
 import psycopg2
@@ -24,7 +15,7 @@ from json import dumps
 from warnings import warn
 from .dataciteTestMode import dataciteTestMode
 from .databaseMode import databaseMode
-from .credentials import credentials as credentials
+from .credentials import credentials
 from .activity import activity
 
 class neotomaDOI:
@@ -114,16 +105,19 @@ class neotomaDOI:
         """        
         if schema is not None:
             self.add_schema(schema)
-        if self.schema is not None:
-            return jsonschema.validate(instance=self.data, schema=self.schema)
-        else:
-            try:
+        
+        try:
+            if self.schema is not None:
+                return jsonschema.validate(instance=self.data, schema=self.schema)
+            else:
                 _ = schema45.validator.validate(self.data)
-            except Exception:
-                raise jsonschema.exceptions.ValidationError(
-                    "There is an issue in the JSON object passed."
-                )
-        return True
+                return True
+        except jsonschema.exceptions.ValidationError as e:
+            raise jsonschema.exceptions.ValidationError(
+                f"Dataset {self.datasetid} validation failed. "
+                f"Field: {'.'.join(str(p) for p in e.path) if e.path else 'root'}. "
+                f"Error: {e.message}"
+            ) from e
 
     def update(self):
         """_Add relevant metadata for DOI minting from the remote database._
@@ -157,10 +151,16 @@ class neotomaDOI:
                 else:
                     self.data[field_name] = fetch_func()
             except Exception as e:
-                raise ValueError(
-                    f"Dataset {self.datasetid}: Failed to fetch '{field_name}' metadata. "
-                    f"Error: {type(e).__name__}: {str(e)}"
-                ) from e
+                warn(
+                    f"Dataset {self.datasetid}: Failed to fetch optional '{field_name}' metadata. "
+                    f"Error: {type(e).__name__}: {str(e)}. "
+                    f"This field will be None.",
+                    UserWarning
+                )
+                if field_name == "identifiers":
+                    self.identifiers = None
+                else:
+                    self.data[field_name] = None
         
         self.activity = None
 
@@ -178,12 +178,17 @@ class neotomaDOI:
             except Exception as e:
                 pass
 
-                # Identify the data as having been remotely updated, and add the hash.
-            self._updated = True
-            self._data_hash = hash(str(self.data))
+            # Identify the data as having been remotely updated, and add the hash.
+            # This way we can quickly check if things have changed without needing to rely on a separate `update()` check.
+        self._updated = True
+        self._data_hash = hash(str(self.data))
             
-    def _data_changed_since_update(self):
-        """_Check if self.data has been modified since update() was called._
+    def _data_changed_since_update(self) -> bool:
+        """Check if self.data has been modified since update() was called.
+
+        The function uses the hashing method to return a signed `int` representing a numerical hash of the dict object.
+        If the two hashes (past and current) are different, then we return False, otherwise, if there is no change
+        then we return True.
 
         Returns:
             _bool_: _A boolean, letting us know whether the data has been changed._
@@ -320,16 +325,14 @@ class neotomaDOI:
         assert self.client is not None, "Requires a valid DataCite client. Must call `set_user()` before updating."
         assert self.identifiers is not None, "Cannot update - no existing DOI found. Use mint_doi() instead"
         assert self.data.get("creators") is not None, "Requires valid metadata. Call update() to populate DataCite metadata before minting."
-        self._check_data_state("mint_doi()")
+        self._check_data_state("update_doi()")
 
-        outcome = None
-        try:
-            outcome = self.validate()
-        except Exception:
-            outcome = False
-        if outcome is False:
-            print("Validation error. Check with the `validate()` method.")
-            return None
+        if not self.is_frozen():
+            print(f"Dataset {self.datasetid} not frozen. Freezing now...")
+            self.freeze_data()
+
+        self.validate()
+
         doi = self.identifiers.get("identifier")
         self.get_meta()
         version = self.meta.get("version")
@@ -419,6 +422,11 @@ class neotomaDOI:
         
         self._check_data_state("mint_doi()")
 
+
+        if not self.is_frozen():
+            print(f"Dataset {self.datasetid} not frozen. Freezing now...")
+            self.freeze_data()
+
         # If we're `minting` but the dataset already has a DOI, then we need to update.
         if self.identifiers:
             self.get_meta()
@@ -431,16 +439,9 @@ class neotomaDOI:
                 return None
             else:
                 return None
-        outcome = None
-        try:
-            # I'm not sure what was going on here. . . 
-            self.data["version"] = "1.0"
-            outcome = self.validate()
-        except Exception:
-            outcome = False
-        if not outcome:
-            print("Validation error. Check with the `validate()` method.")
-            return None
+        
+        _ = self.validate()
+        
         payload = {"type": "dois", "attributes": self.data}
         date = min(
             [
@@ -616,6 +617,7 @@ class neotomaDOI:
                     )
                     frozen_result = cur.fetchall()
                 con.commit()
+                self.data['sizes'] = neo_size(con, self)
                 if len(frozen_result) > 0:
                     print("Dataset frozen.")
             else:
