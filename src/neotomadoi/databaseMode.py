@@ -15,5 +15,6 @@ class databaseMode(Enum):
     Args:
         Enum (_string_): _An enumerated object, with either `tank`or `prod` modes._
     """
+
     tank = "neotomatank"
     prod = "neotoma"

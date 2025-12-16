@@ -107,7 +107,7 @@ class neotomaDOI:
     def __str__(self):
         return dumps(self.data)
 
-    def add_schema(self, schema:str):
+    def add_schema(self, schema: str):
         """_Add additional DataCite schema metadata to the NeotomaDOI object._
 
         Args:
@@ -175,7 +175,9 @@ class neotomaDOI:
             ValueError: _If critical metadata is missing, or is formatted incorrectly, then raise an error._
         """
 
-        assert self.datasetid is not None, "The datasetid must be defined before calling .update()"
+        assert self.datasetid is not None, (
+            "The datasetid must be defined before calling .update()"
+        )
 
         con = neo_connect(tank=(self.databaseMode.name == "tank"))
 
@@ -204,13 +206,12 @@ class neotomaDOI:
                     f"Dataset {self.datasetid}: Failed to fetch optional '{field_name}' metadata. "
                     f"Error: {type(e).__name__}: {str(e)}. "
                     f"This field will be None.",
-                    UserWarning
+                    UserWarning,
                 )
                 if field_name == "identifiers":
                     self.identifiers = None
                 else:
                     self.data[field_name] = None
-
 
         self.activity = None
 
@@ -219,9 +220,9 @@ class neotomaDOI:
                 self.get_activity()
             except Exception as e:
                 raise ValueError(
-                f"Dataset {self.datasetid}: Failed to fetch '{field_name}' metadata. "
-                f"Error: {type(e).__name__}: {str(e)}"
-            ) from e
+                    f"Dataset {self.datasetid}: Failed to fetch '{field_name}' metadata. "
+                    f"Error: {type(e).__name__}: {str(e)}"
+                ) from e
 
             try:
                 self.get_meta()
@@ -231,7 +232,6 @@ class neotomaDOI:
             # Identify the data as having been remotely updated, and add the hash.
             # This way we can quickly check if things have changed without needing to rely on a separate `update()` check.
         self._set_update()
-
 
     def _data_changed_since_update(self) -> bool:
         """Check if self.data has been modified since update() was called.
@@ -280,7 +280,9 @@ class neotomaDOI:
             else:
                 warn(msg, UserWarning)
 
-    def set_user(self, cred: credentials, mode: dataciteTestMode = dataciteTestMode.test):
+    def set_user(
+        self, cred: credentials, mode: dataciteTestMode = dataciteTestMode.test
+    ):
         """_Set the user credentials for the DataCite API, depending on the mode._
 
         Args:
@@ -302,7 +304,9 @@ class neotomaDOI:
             ValueError: _Ensure that credentials have been passed to the datacite object._
         """
         if self.client is None:
-            raise ValueError("You cannot change the mode without credentials [use neotomapydoi.credentials()].")
+            raise ValueError(
+                "You cannot change the mode without credentials [use neotomapydoi.credentials()]."
+            )
         self.dataciteMode = dataciteTestMode.test
 
     def dataciteProd_mode(self):
@@ -322,7 +326,9 @@ class neotomaDOI:
             ValueError: _Ensure that credentials have been passed to the datacite object._
         """
         if self.client is None:
-            raise ValueError("You cannot change the mode without credentials [use neotomapydoi.credentials()].")
+            raise ValueError(
+                "You cannot change the mode without credentials [use neotomapydoi.credentials()]."
+            )
         self.databaseMode = databaseMode.tank
 
     def databaseProd_mode(self):
@@ -355,27 +361,46 @@ class neotomaDOI:
             dois = self.identifiers.get("identifier")
             doi_call = requests.get(
                 self.dataciteMode.value + dois,
-                headers={"Content-Type": "application/vnd.api+json",
-                         "User-Agent": "Neotoma Paleoecology Database DOI System/0.1.0 (Linux; Python v3.11) email:goring@wisc.edu"},
+                headers={
+                    "Content-Type": "application/vnd.api+json",
+                    "User-Agent": "Neotoma Paleoecology Database DOI System/0.1.0 (Linux; Python v3.11) email:goring@wisc.edu",
+                },
             )
             if doi_call.status_code == 200:
                 self.meta = doi_call.json().get("data").get("attributes")
             else:
-                if self.dataciteMode.name == 'prod':
-                    print('Production mode is set, this DOI is not resolving.')
+                if self.dataciteMode.name == "prod":
+                    print("Production mode is set, this DOI is not resolving.")
                     raise requests.exceptions.HTTPError(doi_call.json().get("errors"))
                 else:
                     # Here, if the error is 404, then it's not found. More than likely we need to
                     # actually check the production datacite location.
                     raise requests.exceptions.HTTPError(doi_call.json().get("errors"))
-                    #_ = 10
+                    # _ = 10
         else:
             raise ValueError("There is no DOI currently associated with this object.")
 
-    def update_doi(self):
-        assert self.client is not None, "Requires a valid DataCite client. Must call `set_user()` before updating."
-        assert self.identifiers is not None, "Cannot update - no existing DOI found. Use mint_doi() instead"
-        assert self.data.get("creators") is not None, "Requires valid metadata. Call update() to populate DataCite metadata before minting."
+    def update_doi(self) -> dict:
+        """Update an existing DOI's metadata.
+
+        Returns:
+            dict: {
+                "action": "updated",
+                "doi": str,
+                "old_version": str,
+                "new_version": str,
+                "message": str
+            }
+        """
+        assert self.client is not None, (
+            "Requires a valid DataCite client. Must call `set_user()` before updating."
+        )
+        assert self.identifiers is not None, (
+            "Cannot update - no existing DOI found. Use mint_doi() instead"
+        )
+        assert self.data.get("creators") is not None, (
+            "Requires valid metadata. Call update() to populate DataCite metadata before minting."
+        )
         self._check_data_state("update_doi()")
 
         if not self.is_frozen():
@@ -386,13 +411,18 @@ class neotomaDOI:
 
         doi = self.identifiers.get("identifier")
         self.get_meta()
-        version = self.meta.get("version")
-        if version:
-            version = version.split(".")
-            version[1] = int(version[1]) + 1
-            self.data["version"] = ".".join([str(i) for i in version])
+
+        old_version = self.meta.get("version")
+
+        if old_version:
+            version = old_version.split(".")
+            version[1] = int(old_version[1]) + 1
+            new_version = ".".join([str(i) for i in version])
         else:
-            self.data["version"] = "1.1"
+            new_version = "1.1"
+
+        self.data["version"] = new_version
+
         payload = {
             "data": {"type": "dois", "attributes": self.data, "action": "update"}
         }
@@ -411,7 +441,9 @@ class neotomaDOI:
                     f"Failed to modify DOI: {modifier.text}"
                 )
             else:
-                print(f'Successful PUT update for dataset {self.datasetid} to {self.identifiers['identifier']}')
+                print(
+                    f"Successful PUT update for dataset {self.datasetid} to {self.identifiers['identifier']}"
+                )
                 response = modifier.json()
                 assert response.get("data").get("id") == doi
                 self.meta = self.get_meta()
@@ -421,6 +453,13 @@ class neotomaDOI:
         except Exception as e:
             print(e)
 
+        return {
+            "action": "updated",
+            "doi": doi,
+            "old_version": old_version,
+            "new_version": new_version,
+            "message": f"Successfully updated DOI {doi} from v{old_version} to v{new_version}",
+        }
 
     def get_activity(self):
         """_Pull in the DataCite DOI activity_
@@ -433,12 +472,25 @@ class neotomaDOI:
             self.activity = []
 
     def mint_doi(self):
+        """Mint or update a DOI for this dataset.
 
-        assert self.client is not None, "Must call set_user() before minting. Use neotomadoi.credentials() to set credentials."
-        assert self.data.get("creators") is not None, "Must call update() before minting to populate metadata"
+        Returns:
+            dict: {
+                "action": str,  # "published", "updated", "skipped"
+                "doi": str,     # The DOI identifier
+                "version": str, # Version number
+                "message": str  # Human-readable description
+            }
+        """
+
+        assert self.client is not None, (
+            "Must call set_user() before minting. Use neotomadoi.credentials() to set credentials."
+        )
+        assert self.data.get("creators") is not None, (
+            "Must call update() before minting to populate metadata"
+        )
 
         self._check_data_state("mint_doi()")
-
 
         if not self.is_frozen():
             print(f"Dataset {self.datasetid} not frozen. Freezing now...")
@@ -451,11 +503,18 @@ class neotomaDOI:
                 # If a DOI has been minted and the DOI is active, update the DOI.
                 self.update_doi()
                 return None
-            elif self.meta.get("isActive", True) is False and self.dataciteMode.name == 'prod':
-                self.update_doi()
-                return None
+            elif (
+                self.meta.get("isActive", True) is False
+                and self.dataciteMode.name == "prod"
+            ):
+                return self.update_doi()
             else:
-                return None
+                return {
+                    "action": "skipped",
+                    "doi": self.identifiers.get("identifier"),
+                    "version": self.meta.get("version", "unknown"),
+                    "message": f"DOI already exists and is inactive in test mode",
+                }
 
         _ = self.validate()
 
@@ -467,7 +526,10 @@ class neotomaDOI:
                 if i.get("dateType") == "Submitted"
             ]
         )
-        if datetime.now() - date > timedelta(days=2) and self.dataciteMode.name == 'prod':
+        if (
+            datetime.now() - date > timedelta(days=2)
+            and self.dataciteMode.name == "prod"
+        ):
             # We're publishing and the dataset is old enough.
             payload["attributes"]["event"] = "publish"
         if self.meta.get("isActive", True) is False:
@@ -475,7 +537,9 @@ class neotomaDOI:
             # If there is no `meta` element, then we continue to ignore it.
             payload["attributes"]["event"] = "publish"
             payload["attributes"]["doi"] = self.identifiers.get("identifier")
-        payload["attributes"]["prefix"] = self.client.mode(self.dataciteMode).get("handle")
+        payload["attributes"]["prefix"] = self.client.mode(self.dataciteMode).get(
+            "handle"
+        )
         payload["attributes"]["url"] = (
             f"https://data.neotomadb.org/datasets/{self.datasetid}"
         )
@@ -498,11 +562,11 @@ class neotomaDOI:
                     "identifier": created.json().get("data").get("id"),
                     "identifierType": "DOI",
                 }
-                if self.dataciteMode.name == 'prod':
+                if self.dataciteMode.name == "prod":
                     try:
                         self.get_meta()
                     except Exception as e:
-                        print('Failing from get_meta()')
+                        print("Failing from get_meta()")
                         print(self.identifiers)
                         print(e)
 
@@ -511,7 +575,13 @@ class neotomaDOI:
                     self.get_activity()
         except Exception:
             raise ValueError("Could not mint the dataset.")
-        return None
+
+        return {
+            "action": "published",
+            "doi": self.identifiers.get("identifier"),
+            "version": "1.0",
+            "message": f"Successfully minted DOI {self.identifiers.get('identifier')}",
+        }
 
     def _save_doi_to_database(self) -> bool:
         """_Add the DOI into the database and associate it with the DatasetID_
@@ -531,10 +601,10 @@ class neotomaDOI:
         """
         # We only add to the table if we're in DataCite production mode, or
         # if the database is in Tank mode (in which case we can add whatever).
-        if not (self.dataciteMode.name == 'prod' or self.databaseMode.name == "tank"):
+        if not (self.dataciteMode.name == "prod" or self.databaseMode.name == "tank"):
             return False  # Explicitly skipped
 
-        con = neo_connect(tank = (self.databaseMode.name == "tank"))
+        con = neo_connect(tank=(self.databaseMode.name == "tank"))
 
         with con.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
             _ = cur.execute(
@@ -547,7 +617,6 @@ class neotomaDOI:
             )
             con.commit()
         return True
-
 
     def _update_doi_meta(self):
         """Update the DOI metadata entry in the Neotoma Database, including the JSON metadata and the DOI.
@@ -563,7 +632,7 @@ class neotomaDOI:
             psycopg2.Error: If database operation fails
         """
         try:
-            con = neo_connect(tank = (self.databaseMode.name == "tank"))
+            con = neo_connect(tank=(self.databaseMode.name == "tank"))
             with con.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
                 _ = cur.execute(
                     self._INSERT_DOI_METADATA_,
@@ -577,7 +646,6 @@ class neotomaDOI:
             return True
         except Exception as e:
             print(e)
-
 
     def meta_diff(self):
         current = self.data
@@ -608,7 +676,7 @@ class neotomaDOI:
                 self.dataciteMode.value,
                 headers={"Content-Type": "application/vnd.api+json"},
                 auth=(self.client.get("username"), self.client.get("password")),
-                data=dumps(f'{"data": {payload}}'),
+                data=dumps(f"{'data': {payload}}"),
             )
             if created.status_code != 200:
                 raise requests.RequestException(f"Failed to create DOI: {created.text}")
@@ -670,7 +738,7 @@ class neotomaDOI:
                     )
                     frozen_result = cur.fetchall()
                 con.commit()
-                self.data['sizes'] = neo_size(con, self)
+                self.data["sizes"] = neo_size(con, self)
                 if len(frozen_result) > 0:
                     print("Dataset frozen.")
             else:

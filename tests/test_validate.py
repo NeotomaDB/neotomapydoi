@@ -1,21 +1,21 @@
 from jsonschema.exceptions import ValidationError
-from pytest import fail, raises
+from pytest import fail, raises, warns
 
 from neotomadoi import neotomaDOI
 
-DATASETID = 16
+DATASETID = 1001
 
 
 def test_schema_validate():
     new_doi = neotomaDOI(datasetid=DATASETID, defaults="neotomadoi.yaml")
-    with raises(ValidationError, match="There is an issue"):
+    with raises(ValidationError, match="validation failed"):
         new_doi.validate()
     try:
         new_doi.update()
     except Exception:
         fail(f"Unexpected validation error with dataset {DATASETID}")
     new_doi.data["descriptions"][0]["lang"] = 50
-    with raises(ValidationError, match="There is an issue"):
+    with raises(ValidationError, match="validation failed"):
         new_doi.validate()
 
 
@@ -35,5 +35,5 @@ def test_crap_dois():
     # We expect this one to fail because currently there is no polygon/spatial data associated with it.
     dsid = 4662
     new_doi = neotomaDOI(datasetid=dsid, defaults="neotomadoi.yaml")
-    with raises(ValueError, match="missing critical"):
+    with warns(UserWarning, match="Failed to fetch"):
         new_doi.update()

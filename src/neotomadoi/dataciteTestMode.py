@@ -15,5 +15,6 @@ class dataciteTestMode(Enum):
     Args:
         Enum (_string_): _An enumerated object, with either `test`or `prod` modes._
     """
+
     test = "https://api.test.datacite.org/dois/"
     prod = "https://api.datacite.org/dois/"

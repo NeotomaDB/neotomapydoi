@@ -1,4 +1,4 @@
-""" Fetch Metadata from a valid Neotoma Database Connection"""
+"""Fetch Metadata from a valid Neotoma Database Connection"""
 
 import json
 from json import dumps
@@ -189,7 +189,6 @@ def neo_location(con: psycopg2.connect, self) -> object:
     return [geolocation]
 
 
-
 def neo_relatedIdentifiers(con: psycopg2.connect, self) -> object:
     """_Return identifiers related to the Neotoma dataset._
 
@@ -268,7 +267,6 @@ def neo_relatedIdentifiers(con: psycopg2.connect, self) -> object:
     return relatedIdentifiers
 
 
-
 def neo_size(con: psycopg2.connect, self) -> object:
     """_Get dataset object size._
 
@@ -291,7 +289,7 @@ def neo_size(con: psycopg2.connect, self) -> object:
         response = cur.fetchone()
         if response:
             download = getsizeof(dumps(response))
-            size = [f"{round(download/1000)} kB"]
+            size = [f"{round(download / 1000)} kB"]
         else:
             raise AttributeError(
                 "There is no frozen version of this dataset. Use the freeze_data()"
@@ -339,7 +337,9 @@ def neo_creators(con: psycopg2.connect, self) -> list:
                     [i.get("nameIdentifier") for i in creator.get("nameIdentifiers")]
                 ):
                     _ = creator.pop("nameIdentifiers", None)
-                creators.append({k:creator[k] for k in creator.keys() if k != 'piorder'})
+                creators.append(
+                    {k: creator[k] for k in creator.keys() if k != "piorder"}
+                )
     except TransactionTimeout as error:
         print("Database timeout error in neo_creators:")
         print(error)
@@ -351,6 +351,7 @@ def neo_creators(con: psycopg2.connect, self) -> list:
         con.rollback()
         print(error)
     return creators
+
 
 def neo_contributors(con: psycopg2.connect, self) -> list:
     """_Obtain a list of the dataset contributors by activity for a dataset._
@@ -555,7 +556,10 @@ def neo_dates(con: psycopg2.connect, self) -> object:
             date_out = []
             for i in dates:
                 date_out.append(
-                    {"dateType": i.get("text"), "date": i.get("date").strftime("%Y-%m-%d")}
+                    {
+                        "dateType": i.get("text"),
+                        "date": i.get("date").strftime("%Y-%m-%d"),
+                    }
                 )
     except TransactionTimeout as error:
         print("Database timeout error in neo_creators:")
