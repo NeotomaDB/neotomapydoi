@@ -30,24 +30,14 @@ dependencies = [
     "python-dotenv>=1.1.0",
     "pyyaml>=6.0.2",
     "requests>=2.32.3",
-    "setuptools>=79.0.0",
     "shapely>=2.1.0",
 ]
-
-[tool.scripts]
-test = "pytest"
-test-cov = "pytest --cov --cov-report=html"
-docs-serve = "mkdocs serve"
-docs-build = "mkdocs build"
-lint = "ruff check src"
-format = "ruff format src"
 
 [project.urls]
 "Source Code" = "https://github.com/NeotomaDB/neotomapydoi"
 Funding = "https://nsf.gov/awardsearch/showAward?AWD_ID=2410961"
 Issues = "https://github.com/NeotomaDB/neotomapydoi/issues"
 download = "https://github.com/NeotomaDB/neotomapydoi/archive/refs/heads/main.zip"
-
 
 [build-system]
 requires = ["hatchling"]
@@ -91,3 +81,16 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["D"] # Don't require docstrings in tests
+
+[tool.coverage.run]
+source = ["src/neotomadoi"]
+omit = ["tests/*", "**/__pycache__/*", "**/__init__.py"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]
