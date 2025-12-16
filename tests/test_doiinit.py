@@ -1,6 +1,8 @@
-from neotomadoi import dataciteTestMode, neotomaDOI, neo_connect
 from datetime import datetime
+
 from psycopg2.extensions import connection
+
+from neotomadoi import dataciteTestMode, neo_connect, neotomaDOI
 
 DATASETID = 16
 

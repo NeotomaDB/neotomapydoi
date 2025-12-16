@@ -2,36 +2,29 @@
 name = "neotomadoi"
 version = "0.1.0"
 description = "Minting process for the Neotoma Paleoecology Database's DOIs using the DataCite API and the Neotoma API."
-readme = {file = "README.md", content-type = "text/markdown"}
+readme = { file = "README.md", content-type = "text/markdown" }
 license = "MIT"
-license-files=["LICENSE.md"]
-authors = [
-    { name = "Simon Goring", email = "goring@wisc.edu", orcid = "https://orcid.org/0000-0002-2700-4605" }
-]
-maintainers = [
-    { name = "Simon Goring", email = "goring@wisc.edu", orcid = "https://orcid.org/0000-0002-2700-4605" }
-]
+license-files = ["LICENSE.md"]
+authors = [{ name = "Simon Goring", email = "goring@wisc.edu" }]
+maintainers = [{ name = "Simon Goring", email = "goring@wisc.edu" }]
 requires-python = ">=3.12"
-keywords=["DataCite", "Postgresql", "metadata", "Open Science"]
-classifiers=["Development Status :: 4 - Beta", 
-             "Framework :: Hatch",
-             "Framework :: Pytest",
-             "Intended Audience :: Science/Research",
-             "License :: OSI Approved :: MIT License",
-             "Operating System :: POSIX :: Linux",
-             "Programming Language :: Python :: 3.12",
-             "Programming Language :: SQL",
-             "Topic :: Database",
-             "Topic :: Scientific/Engineering"]
+keywords = ["DataCite", "Postgresql", "metadata", "Open Science"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: Hatch",
+    "Framework :: Pytest",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: SQL",
+    "Topic :: Database",
+    "Topic :: Scientific/Engineering",
+]
 dependencies = [
-    "argparse>=1.4.0",
     "datacite>=1.2.0",
     "deepdiff>=8.4.2",
     "jsonschema>=4.23.0",
-    "mkdocs-literate-nav>=0.6.2",
-    "mkdocs-material>=9.6.16",
-    "mkdocs>=1.6.1",
-    "mkdocstrings[python]>=0.30.0",
     "psycopg2>=2.9.10",
     "pyalex>=0.18",
     "python-dotenv>=1.1.0",
@@ -41,9 +34,17 @@ dependencies = [
     "shapely>=2.1.0",
 ]
 
+[tool.scripts]
+test = "pytest"
+test-cov = "pytest --cov --cov-report=html"
+docs-serve = "mkdocs serve"
+docs-build = "mkdocs build"
+lint = "ruff check src"
+format = "ruff format src"
+
 [project.urls]
-source = "https://github.com/NeotomaDB/neotomapydoi"
-funding = "https://nsf.gov/awardsearch/showAward?AWD_ID=2410961"
+"Source Code" = "https://github.com/NeotomaDB/neotomapydoi"
+Funding = "https://nsf.gov/awardsearch/showAward?AWD_ID=2410961"
 Issues = "https://github.com/NeotomaDB/neotomapydoi/issues"
 download = "https://github.com/NeotomaDB/neotomapydoi/archive/refs/heads/main.zip"
 
@@ -53,9 +54,12 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
-dev = [
-    "pytest-cov>=6.1.1",
-    "pytest>=8.3.5",
+dev = ["pytest-cov>=6.1.1", "pytest>=8.3.5"]
+docs = [
+    "mkdocs>=1.6.1",
+    "mkdocs-material>=9.6.16",
+    "mkdocs-literate-nav>=0.6.2",
+    "mkdocstrings[python]>=0.30.0",
 ]
 
 [tool.pytest.ini_options]
@@ -68,7 +72,22 @@ addopts = "--doctest-modules --maxfail=1 --cov=neotomadoi"
 # Same as Black.
 line-length = 88
 indent-width = 4
-
-# Assume Python 3.12
 target-version = "py312"
+src = ["src"]
 
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "N",  # pep8-naming
+    "UP", # pyupgrade
+    "B",  # flake8-bugbear
+]
+ignore = [
+    "E501", # line too long (let formatter handle it)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["D"] # Don't require docstrings in tests

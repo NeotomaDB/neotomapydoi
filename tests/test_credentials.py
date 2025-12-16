@@ -1,7 +1,9 @@
-import pytest
-from neotomadoi import dataciteTestMode, neotomaDOI, credentials
 from random import choices
-from string import digits, ascii_lowercase
+from string import ascii_lowercase, digits
+
+import pytest
+
+from neotomadoi import credentials, dataciteTestMode, neotomaDOI
 
 DATASETID = 16
 

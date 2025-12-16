@@ -1,8 +1,10 @@
-import pytest
-from neotomadoi import neotomaDOI, credentials
-from dotenv import load_dotenv
 from json import loads
 from os import getenv
+
+import pytest
+from dotenv import load_dotenv
+
+from neotomadoi import credentials, neotomaDOI
 
 DATASETID = 16
 
@@ -14,7 +16,7 @@ def test_mint_test_doi():
     DCITE = loads(getenv("DCITE"))
     new_doi.set_user(cred=credentials(DCITE))
     new_doi.dataciteTest_mode()
-    new_doi.mint_doi()
+    outcome = new_doi.mint_doi()
     assert isinstance(new_doi.identifiers, dict)
     assert new_doi.identifiers.get("identifierType") == "DOI"
     try:

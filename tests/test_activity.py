@@ -1,5 +1,6 @@
 from neotomadoi import activity
 
+
 def test_activity(doiobj_prod):
     # We should expect that we can create the object and obtain activity information.
     doiobj_prod.update()

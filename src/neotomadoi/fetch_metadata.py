@@ -1,13 +1,19 @@
 """ Fetch Metadata from a valid Neotoma Database Connection"""
 
+import json
+from json import dumps
+from sys import getsizeof
+
 import psycopg2
 import psycopg2.extras
-from psycopg2.errors import TransactionTimeout, InvalidTextRepresentation, UndefinedFunction, InFailedSqlTransaction
-from shapely import wkt
-from sys import getsizeof
-from json import dumps
+from psycopg2.errors import (
+    InFailedSqlTransaction,
+    InvalidTextRepresentation,
+    TransactionTimeout,
+    UndefinedFunction,
+)
 from pyalex import Works, config
-import json
+from shapely import wkt
 
 config.max_retries = 0
 config.retry_backoff_factor = 0.1
@@ -23,7 +29,7 @@ def neo_subjects(con: psycopg2.connect, self) -> object:
 
     Returns:
         object: _A list of subjects with associated subject schemes._
-    """    
+    """
     pubs = []
     topics = []
     subjects = []
@@ -71,7 +77,7 @@ def neo_title(con: psycopg2.connect, self) -> object:
 
     Returns:
         object: _A title component matching the DataCite schema element._
-    """    
+    """
     query = """
         SELECT st.sitename || ' ' || dst.datasettype || ' dataset' AS title
         FROM
@@ -99,7 +105,7 @@ def neo_location(con: psycopg2.connect, self) -> object:
 
     Returns:
         object: _An object that maps to the geoLocation element in the DataCite metadata._
-    """    
+    """
     geolocation = {"geoLocationPlace": None}
     # Using 0.01 as the precision to give less precise coordinate box.
     loc_query = """
@@ -192,7 +198,7 @@ def neo_relatedIdentifiers(con: psycopg2.connect, self) -> object:
 
     Returns:
         object: _An object that aligns with the DataCite `relatedIdentifiers` schema for Neotoma datasets._
-    """    
+    """
     relatedIdentifiers = []
     ds_query = """
         SELECT doi as identifier,
@@ -274,7 +280,7 @@ def neo_size(con: psycopg2.connect, self) -> object:
 
     Returns:
         object: _An object that aligns with the DataCite `size` property._
-    """    
+    """
     query = """
         SELECT download
         FROM doi.frozen
@@ -451,7 +457,7 @@ def neo_identifier(con: psycopg2.connect, self) -> object:
 
     Returns:
         object: _An object with the dataset DOI._
-    """    
+    """
     query = """
         SELECT doi as identifier,
         'DOI' as "identifierType"
@@ -477,7 +483,7 @@ def neo_description(con: psycopg2.connect, self) -> object:
 
     Returns:
         object: _An object with the description and description type._
-    """    
+    """
     query = """
         SELECT st.sitename || ' ' || dst.datasettype || ' dataset' AS title
         FROM
@@ -509,7 +515,7 @@ def neo_dates(con: psycopg2.connect, self) -> object:
 
     Returns:
         object: _A object listing each date type (Submitted, Updated, etc.) and the relevant date._
-    """    
+    """
     query = """
         WITH creation AS (
             SELECT MIN(ds.submissiondate)::date as date, 'Submitted'::text

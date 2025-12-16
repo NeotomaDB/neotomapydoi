@@ -1,8 +1,8 @@
 import pytest
+
 from neotomadoi import neotomaDOI
 
 DATASETID = 16
-
 
 def test_meta():
     # Putting in a junk identifier, should raise an exception.

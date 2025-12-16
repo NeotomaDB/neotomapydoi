@@ -1,6 +1,7 @@
+from json import loads
+
 import psycopg2
 from dotenv import dotenv_values
-from json import loads
 
 
 def neo_connect(tank: bool = False) -> psycopg2.connect:

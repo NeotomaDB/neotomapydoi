@@ -1,6 +1,7 @@
-from neotomadoi import neotomaDOI
-from pytest import raises, fail
 from jsonschema.exceptions import ValidationError
+from pytest import fail, raises
+
+from neotomadoi import neotomaDOI
 
 DATASETID = 16
 

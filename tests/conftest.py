@@ -1,8 +1,10 @@
-import pytest
-from neotomadoi import neotomaDOI, credentials, neo_connect
-from dotenv import load_dotenv
 import json
 import os
+
+import pytest
+from dotenv import load_dotenv
+
+from neotomadoi import credentials, neo_connect, neotomaDOI
 
 load_dotenv()
 
@@ -19,7 +21,7 @@ def dcite_credentials():
     dcite_json = os.getenv("DCITE")
     if not dcite_json:
         pytest.skip("DCITE credentials not found in environment")
-    
+
     try:
         dcite_data = json.loads(dcite_json)
         return credentials(dcite_data)
