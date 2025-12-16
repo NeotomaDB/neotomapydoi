@@ -71,31 +71,21 @@ def parse_args():
     args = parser.parse_args()
     return args
 
-def printargs(args):
+def printargs(args, datasetids):
     runstart = datetime.now(UTC).isoformat()
     print("*** Neotoma DOI Generator ***")
-    print(f"Run beginning {runstart}")
+    print(f"Run: {runstart}")
 
-    if args.tank:
-        print(" * Running against the Neotoma Holding Tank")
-    else:
-        print(" * Running against the Neotoma Production Database")
-
-    if args.mint:
-        print(" * Datasets will be minted on DataCite")
-    else:
-        print(" * Datasets will be run against the DataCite Sandbox")
-    if args.datasets:
-        print(f" * User has defined datasets to be run against:\n\t\t{args.datasets}")
-
+    print(f"Database: {'Tank' if args.tank else 'Production'}")
+    print(f"DataCite: {'Production' if args.mint else 'Sandbox'}")
+    print(f"Datasets: {len(datasetids)} to process")
+    print("-" * 50)
 
 def main(args):
     runstart = datetime.now(UTC).isoformat()
     load_dotenv()
 
     DCITE = json.loads(os.getenv("DCITE"))
-
-    # Define credentials and connect to Neotoma.
     datacite_meta = neotomadoi.credentials(DCITE)
 
     # Do we use Neotoma proper or the holding tank?
@@ -105,9 +95,7 @@ def main(args):
         con = neotomadoi.neo_connect(tank = False)
 
     if args.datasets:
-        with open('src/neotomadoi/sql/ds_datasetids.sql') as file:
-            query = file.read()
-            datasetids = args.datasets[0]
+        datasetids = args.datasets[0]
     else:
         with open('src/neotomadoi/sql/ds_timeslice.sql') as file:
             query = file.read()
@@ -117,47 +105,52 @@ def main(args):
             datasetids = cur.fetchall()
             datasetids = [i[0] for i in datasetids]
 
-    _ = printargs(args)
+    _ = printargs(args, datasetids)
 
-    for i in datasetids:
-        print(f"Working on {i}")
-        new_doi = neotomadoi.neotomaDOI(datasetid=i, defaults="neotomadoi.yaml")
-        new_doi.set_user(datacite_meta)
-        if args.tank is False:
-            new_doi.databaseProd_mode()
-        if args.mint is True:
-            new_doi.dataciteProd_mode()
+    for dataset_id in datasetids:
         try:
-            new_doi.update()
-            _ = new_doi.validate()
-            new_doi.get_activity()
-            old_activity = len(new_doi.activity)
-            if not new_doi.identifiers or args.update:
-                new_doi.mint_doi()
-                if old_activity == 0:
-                    with open(f"{args.output[0]}_{runstart}_published.log", "a", encoding="UTF-8") as f:
-                        new_doi.get_meta()
-                        json.dump(
-                            {"datasetid": i, "doi": new_doi.identifiers, "meta": new_doi.data},
-                            f,
-                        )
-                        _ = f.write("\n")
-                    print(f'  Minted new DOI: {new_doi.identifiers.get('identifier')}')
-                elif old_activity > 0:
-                    with open(f"{args.output[0]}_{runstart}_updated.log", "a", encoding="UTF-8") as f:
-                        new_doi.get_meta()
-                        json.dump(
-                            {"datasetid": i, "doi": new_doi.identifiers, "meta": new_doi.data},
-                            f,
-                        )
-                        _ = f.write("\n")
-                    print(f'  Updated DOI: {new_doi.identifiers.get('identifier')}')
+            # Create and configure DOI object
+            doi_obj = neotomadoi.neotomaDOI(datasetid=dataset_id, defaults="neotomadoi.yaml")
+            doi_obj.set_user(datacite_meta)
+
+            if not args.tank:
+                doi_obj.databaseProd_mode()
+            if args.mint:
+                doi_obj.dataciteProd_mode()
+
+            # Update metadata
+            doi_obj.update()
+            doi_obj.validate()
+
+            # Mint or update
+            if not doi_obj.identifiers or args.update:
+                result = doi_obj.mint_doi()
+
+                # Log based on action
+                log_file = f"{args.output}_{runstart}_{result['action']}.log"
+                with open(log_file, "a", encoding="UTF-8") as f:
+                    json.dump({
+                        "datasetid": dataset_id,
+                        "doi": result['doi'],
+                        "action": result['action'],
+                        "version": result.get('new_version', result.get('version')),
+                        "metadata": doi_obj.data
+                    }, f)
+                    f.write("\n")
+
+                # Print result
+                print(f"✓ Dataset {dataset_id}: {result['message']}")
+            else:
+                print(f"○ Dataset {dataset_id}: Skipped (already has DOI: {doi_obj.identifiers.get('identifier')})")
+
         except Exception as e:
-            print("Whoops.")
-            print(e)
-            with open(f"{args.output[0]}_{runstart}_errored.log", "a", encoding="UTF-8") as f:
-                json.dump({"datasetid": i, "error": str(e)}, f)
-                _ = f.write("\n")
+            print(f"✗ Dataset {dataset_id}: Failed - {str(e)}")
+            with open(f"{args.output}_{runstart}_errored.log", "a", encoding="UTF-8") as f:
+                json.dump({"datasetid": dataset_id, "error": str(e)}, f)
+                f.write("\n")
+
+    print("-" * 50)
+    print("Processing complete")
 
 if __name__ == '__main__':
     args = parse_args()
