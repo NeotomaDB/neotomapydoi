@@ -416,7 +416,7 @@ class neotomaDOI:
 
         if old_version:
             version = old_version.split(".")
-            version[1] = int(old_version[1]) + 1
+            version[1] = int(version[1]) + 1
             new_version = ".".join([str(i) for i in version])
         else:
             new_version = "1.1"
@@ -501,8 +501,8 @@ class neotomaDOI:
             self.get_meta()
             if self.meta.get("isActive", False):
                 # If a DOI has been minted and the DOI is active, update the DOI.
-                self.update_doi()
-                return None
+                updated = self.update_doi()
+                return updated
             elif (
                 self.meta.get("isActive", True) is False
                 and self.dataciteMode.name == "prod"
@@ -738,9 +738,10 @@ class neotomaDOI:
                     )
                     frozen_result = cur.fetchall()
                 con.commit()
-                self.data["sizes"] = neo_size(con, self)
+                self.is_frozen = True
                 if len(frozen_result) > 0:
                     print("Dataset frozen.")
+                    self.data["sizes"] = neo_size(con, self)
             else:
                 warn(
                     "This dataset has already been frozen in the database. You must override manually.",

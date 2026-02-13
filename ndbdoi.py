@@ -21,6 +21,7 @@ The script can be run as:
 import argparse
 import json
 import os
+import traceback
 from datetime import UTC, datetime
 
 import psycopg2
@@ -75,7 +76,6 @@ def printargs(args, datasetids):
     runstart = datetime.now(UTC).isoformat()
     print("*** Neotoma DOI Generator ***")
     print(f"Run: {runstart}")
-
     print(f"Database: {'Tank' if args.tank else 'Production'}")
     print(f"DataCite: {'Production' if args.mint else 'Sandbox'}")
     print(f"Datasets: {len(datasetids)} to process")
@@ -120,12 +120,10 @@ def main(args):
 
             # Update metadata
             doi_obj.update()
-            doi_obj.validate()
 
             # Mint or update
             if not doi_obj.identifiers or args.update:
                 result = doi_obj.mint_doi()
-
                 # Log based on action
                 log_file = f"{args.output}_{runstart}_{result['action']}.log"
                 with open(log_file, "a", encoding="UTF-8") as f:
@@ -146,7 +144,11 @@ def main(args):
         except Exception as e:
             print(f"✗ Dataset {dataset_id}: Failed - {str(e)}")
             with open(f"{args.output}_{runstart}_errored.log", "a", encoding="UTF-8") as f:
-                json.dump({"datasetid": dataset_id, "error": str(e)}, f)
+                json.dump({
+                    "datasetid": dataset_id,
+                    "error": str(e),
+                    "traceback": traceback.format_exc()  # Also log it
+                }, f)
                 f.write("\n")
 
     print("-" * 50)

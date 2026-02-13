@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 from neotomadoi import credentials, neotomaDOI
 
-DATASETID = 16
+DATASETID = 1001
 
 def test_mint_test_doi():
     new_doi = neotomaDOI(datasetid=DATASETID, defaults="neotomadoi.yaml")
