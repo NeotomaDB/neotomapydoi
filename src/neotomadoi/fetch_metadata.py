@@ -1,4 +1,13 @@
-"""Fetch Metadata from a valid Neotoma Database Connection"""
+"""Fetch Metadata from a valid Neotoma Database Connection
+
+The DataCite API and metadata schema requires certain data elements from
+Neotoma. These fetch methods (prepended by `neo_*()`) use calls to Neotoma
+or other data resources, such as OpenAlex, to build the metadata elements.
+
+Each function is intended to return a particular metadata element. In this way
+we can maintain the capacity to add or modify the kinds of metadata we contribute
+to DataCite without having to modify the core code. We can also improve
+query methods or other tools without impacting other methods."""
 
 import json
 from json import dumps

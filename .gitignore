@@ -15,3 +15,5 @@ __pycache__/
 .github/instructions/snyk_rules.instructions.md
 
 site/
+
+.vscode/

@@ -60,7 +60,6 @@ class neotomaDOI:
         >>> doi = neotomaDOI(datasetid=12345, defaults="neotomadoi.yaml")
         >>> doi.set_user(credentials_obj)
         >>> doi.update()  # Fetch metadata from database
-        >>> doi.validate()  # Check against DataCite schema
         >>> doi.mint_doi()  # Publish to DataCite
     """
 
