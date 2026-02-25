@@ -1,4 +1,4 @@
-[![lifecycle](https://img.shields.io/badge/lifecycle-active-orange.svg)]
+![lifecycle](https://img.shields.io/badge/lifecycle-active-orange.svg)
 [![NSF-2410961](https://img.shields.io/badge/NSF-2410961-blue.svg)](https://nsf.gov/awardsearch/showAward?AWD_ID=2410961)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/11102/badge)](https://www.bestpractices.dev/projects/11102)
 
@@ -73,6 +73,14 @@ uv run ndbdoi.py -h
 ```
 
 The `ndbdoi.py` module uses `argparser` to manage commandline arguments. At any time you can get help by using the `-h` flag. With the help you can see there is one main function, `-m`, minting. However, there are times when we want to simply test that the minting process will run securely and send data to the DataCite Sandbox. In this case, we use the flag `-t` or `--tank`.
+
+### Sandbox Minting
+
+Before minting datasets, it is recommended to test the minting process using the Neotoma Holding Tank and the DataCite Sandbox:
+
+```bash
+uv run ndbdoi.py --tank
+```
 
 ## Neotoma DOI Metadata
 
