@@ -17,3 +17,5 @@ __pycache__/
 site/
 
 .vscode/
+
+logs/

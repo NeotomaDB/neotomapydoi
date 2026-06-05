@@ -470,8 +470,11 @@ class neotomaDOI:
         else:
             self.activity = []
 
-    def mint_doi(self):
+    def mint_doi(self, force: bool = False):
         """Mint or update a DOI for this dataset.
+
+        Args:
+            force (bool): If True, publish even if the dataset was submitted less than 2 days ago.
 
         Returns:
             dict: {
@@ -525,12 +528,15 @@ class neotomaDOI:
                 if i.get("dateType") == "Submitted"
             ]
         )
-        if (
-            datetime.now() - date > timedelta(days=2)
-            and self.dataciteMode.name == "prod"
-        ):
-            # We're publishing and the dataset is old enough.
-            payload["attributes"]["event"] = "publish"
+        if self.dataciteMode.name == "prod":
+            if datetime.now() - date > timedelta(days=2):
+                payload["attributes"]["event"] = "publish"
+            elif force:
+                print(f"Warning: Dataset {self.datasetid} was submitted less than 2 days ago. Force publishing.")
+                payload["attributes"]["event"] = "publish"
+            else:
+                print(f"Warning: Dataset {self.datasetid} was submitted less than 2 days ago. "
+                      f"DOI will be drafted, not published. Use -f to force publish.")
         if self.meta.get("isActive", True) is False:
             # The dataset has been drafted, but we want to publish now.
             # If there is no `meta` element, then we continue to ignore it.

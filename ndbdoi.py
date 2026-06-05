@@ -58,6 +58,10 @@ def parse_args():
     parser.add_argument('-u', '--update',
                         action = "store_true",
                         help = 'Update the DataCite Metadata if a DOI record exists already? (Default is False, records will not be updated)')
+    parser.add_argument('-f', '--force',
+                        action = "store_true",
+                        default = False,
+                        help = 'Force publish even if the dataset was submitted less than 2 days ago. Can only be used with -d (specific datasets).')
     group = parser.add_mutually_exclusive_group()
     group.add_argument('-w', '--weeks',
                         type = int,
@@ -70,6 +74,8 @@ def parse_args():
                         help = 'Dataset id  (or comma separated ids) to be minted.')
 
     args = parser.parse_args()
+    if args.force and not args.datasets:
+        parser.error("-f/--force can only be used with -d/--datasets.")
     return args
 
 def printargs(args, datasetids):
@@ -123,7 +129,7 @@ def main(args):
 
             # Mint or update
             if not doi_obj.identifiers or args.update:
-                result = doi_obj.mint_doi()
+                result = doi_obj.mint_doi(force=args.force)
                 # Log based on action
                 log_file = f"{args.output}_{runstart}_{result['action']}.log"
                 with open(log_file, "a", encoding="UTF-8") as f:
@@ -165,5 +171,6 @@ else:
         datasets = [[66173,66174,66175,66176]]
         output = 'minting'
         update = False
+        force = False
 
 main(args)
