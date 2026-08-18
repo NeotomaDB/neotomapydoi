@@ -319,15 +319,10 @@ Resources:
               taskArn: $.detail.taskArn
               stoppedAt: $.detail.stoppedAt
               stoppedReason: $.detail.stoppedReason
-            InputTemplate: !Sub |
-              "The Neotoma DOI minting run (${Environment}) failed."
-              ""
-              "Task:    <taskArn>"
-              "Stopped: <stoppedAt>"
-              "Reason:  <stoppedReason>"
-              ""
-              "Container logs: /ecs/neotoma-doi-minter-${Environment} in CloudWatch."
-              "Run logs:       s3://neotoma-doi-logs-${Environment}-${AWS::AccountId}/"
+            # A single quoted string: EventBridge emits one quoted line per
+            # template line, so a multi-line template reaches SNS with literal
+            # quote characters around every line.
+            InputTemplate: !Sub '"The Neotoma DOI minting run (${Environment}) failed. Task <taskArn> stopped at <stoppedAt>. Reason: <stoppedReason>. Container logs: log group /ecs/neotoma-doi-minter-${Environment} in CloudWatch. Run logs: s3://neotoma-doi-logs-${Environment}-${AWS::AccountId}/"'
 
   # The task never got as far as running its container (image pull failure,
   # missing secret, no capacity). This produces no exit code, so it needs its
@@ -351,11 +346,7 @@ Resources:
             InputPathsMap:
               taskArn: $.detail.taskArn
               stoppedReason: $.detail.stoppedReason
-            InputTemplate: !Sub |
-              "The Neotoma DOI minting task (${Environment}) failed to start."
-              ""
-              "Task:   <taskArn>"
-              "Reason: <stoppedReason>"
+            InputTemplate: !Sub '"The Neotoma DOI minting task (${Environment}) failed to start. Task <taskArn>. Reason: <stoppedReason>"'
 
 Outputs:
   ClusterName:
@@ -375,6 +366,15 @@ Outputs:
     Value: !Ref TaskSecurityGroup
     Export:
       Name: !Sub "${AWS::StackName}-TaskSecurityGroupId"
+
+  PrivateSubnetIds:
+    Description: >
+      Subnets the task runs in. Exported so manual `run-task` invocations can
+      read them from the stack instead of needing their own copy of the
+      PRIVATE_SUBNETS secret.
+    Value: !Join [",", !Ref PrivateSubnets]
+    Export:
+      Name: !Sub "${AWS::StackName}-PrivateSubnetIds"
 
   LogBucketName:
     Description: Bucket holding the per-run minting logs.
