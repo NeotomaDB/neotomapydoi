@@ -280,6 +280,30 @@ class neotomaDOI:
             else:
                 warn(msg, UserWarning)
 
+    def _submission_dates(self) -> list:
+        """_The dataset's submission dates, parsed, earliest first._
+
+        Returns:
+            list: _`datetime` objects for every `Submitted` entry in the dataset's
+            dates, earliest first. Never empty — callers can rely on `[0]` being
+            the earliest submission._
+
+        Raises:
+            DatasetNotReady: _If the dataset has no submission date at all, which
+            means its owner has not submitted it yet rather than that anything is
+            wrong._
+        """
+        submitted = [
+            datetime.strptime(i.get("date"), "%Y-%m-%d")
+            for i in self.data.get("dates")
+            if i.get("dateType") == "Submitted"
+        ]
+        if not submitted:
+            raise DatasetNotReady(
+                f"dataset {self.datasetid} has no submission date; not submitted yet"
+            )
+        return sorted(submitted)
+
     def set_user(
         self, cred: credentials, mode: dataciteTestMode = dataciteTestMode.test
     ):
@@ -495,6 +519,14 @@ class neotomaDOI:
 
         self._check_data_state("mint_doi()")
 
+        # Establish readiness BEFORE freezing. `doi.frozen` is write-once — the
+        # insert is guarded by `is_frozen()` and an ON CONFLICT DO NOTHING, and
+        # freeze_data() warns that it "must be overridden manually" — so whatever
+        # is frozen now is what the DOI describes forever. Freezing a dataset
+        # whose owner has not finished submitting it would permanently attach a
+        # stale snapshot to the DOI it eventually receives.
+        submitted = self._submission_dates()
+
         if not self.is_frozen():
             print(f"Dataset {self.datasetid} not frozen. Freezing now...")
             self.freeze_data()
@@ -522,22 +554,9 @@ class neotomaDOI:
         _ = self.validate()
 
         payload = {"type": "dois", "attributes": self.data}
-        submitted = [
-            datetime.strptime(i.get("date"), "%Y-%m-%d")
-            for i in self.data.get("dates")
-            if i.get("dateType") == "Submitted"
-        ]
-        # No submission date means the owner has not submitted the dataset yet,
-        # which is a normal transient state rather than a fault. Raise in both
-        # modes, not just `prod`: the sandbox pass is a rehearsal of the mint, so
-        # it should skip exactly what production would skip.
-        if not submitted:
-            raise DatasetNotReady(
-                f"dataset {self.datasetid} has no submission date; not submitted yet"
-            )
 
         if self.dataciteMode.name == "prod":
-            date = min(submitted)
+            date = submitted[0]
             if datetime.now() - date > timedelta(days=2):
                 payload["attributes"]["event"] = "publish"
             elif force:
