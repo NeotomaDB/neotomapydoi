@@ -1,0 +1,143 @@
+name: Run DOI Minting
+
+# The manual replacement for the Friday terminal session. The weekly run itself
+# is fired by EventBridge Scheduler inside AWS; this workflow is for ad hoc runs
+# and for verifying the pipeline after a deploy.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Which stack to run against
+        type: choice
+        options: [dev, prod]
+        default: dev
+      mode:
+        description: >
+          gate-only stops after the DataCite sandbox pass; full continues to the
+          production mint if the gate is clean.
+        type: choice
+        options: [gate-only, full]
+        default: gate-only
+      datasets:
+        description: Optional comma-separated dataset ids (default is the last 2 weeks)
+        type: string
+        default: ""
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-2
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Read stack outputs
+        run: |
+          set -euo pipefail
+          STACK_NAME="neodoi-${{ inputs.environment }}"
+          get_output () {
+            aws cloudformation describe-stacks --stack-name "$STACK_NAME" \
+              --region "$AWS_REGION" \
+              --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" \
+              --output text
+          }
+          echo "STACK_NAME=$STACK_NAME" >> $GITHUB_ENV
+          echo "CLUSTER=$(get_output ClusterName)" >> $GITHUB_ENV
+          echo "TASK_DEF=$(get_output TaskDefinitionArn)" >> $GITHUB_ENV
+          echo "TASK_SG=$(get_output TaskSecurityGroupId)" >> $GITHUB_ENV
+          echo "LOG_BUCKET=$(get_output LogBucketName)" >> $GITHUB_ENV
+          echo "LOG_GROUP=$(get_output LogGroupName)" >> $GITHUB_ENV
+
+      - name: Start minting task
+        run: |
+          set -euo pipefail
+
+          GATE_ONLY=0
+          [ "${{ inputs.mode }}" = "gate-only" ] && GATE_ONLY=1
+
+          # entrypoint.sh forwards "$@" to both ndbdoi.py passes.
+          if [ -n "${{ inputs.datasets }}" ]; then
+            CMD=$(jq -nc --arg d "${{ inputs.datasets }}" '["-d", $d]')
+          else
+            CMD='[]'
+          fi
+
+          OVERRIDES=$(jq -nc --argjson cmd "$CMD" --arg gate "$GATE_ONLY" '
+            {containerOverrides: [
+              ({name: "minter", environment: [{name: "GATE_ONLY", value: $gate}]}
+               + (if ($cmd | length) > 0 then {command: $cmd} else {} end))
+            ]}')
+
+          NETWORK=$(jq -nc --arg sg "$TASK_SG" --arg subnets "${{ secrets.PRIVATE_SUBNETS }}" '
+            {awsvpcConfiguration: {
+              subnets: ($subnets | split(",")),
+              securityGroups: [$sg],
+              assignPublicIp: "DISABLED"
+            }}')
+
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "$CLUSTER" \
+            --task-definition "$TASK_DEF" \
+            --launch-type FARGATE \
+            --count 1 \
+            --network-configuration "$NETWORK" \
+            --overrides "$OVERRIDES" \
+            --started-by "gh-actions-${{ github.run_id }}" \
+            --region "$AWS_REGION" \
+            --query 'tasks[0].taskArn' --output text)
+
+          if [ -z "$TASK_ARN" ] || [ "$TASK_ARN" = "None" ]; then
+            echo "::error::run-task did not return a task ARN."
+            exit 1
+          fi
+          echo "TASK_ARN=$TASK_ARN" >> $GITHUB_ENV
+          echo "Started $TASK_ARN"
+
+      - name: Wait for the task to stop
+        run: |
+          set -euo pipefail
+          # `wait tasks-stopped` polls for up to 10 minutes per call; a large
+          # weekly batch can run longer, so retry until the task really stops.
+          for _ in $(seq 1 9); do
+            if aws ecs wait tasks-stopped --cluster "$CLUSTER" --tasks "$TASK_ARN" \
+                 --region "$AWS_REGION" 2>/dev/null; then
+              break
+            fi
+            echo "Still running..."
+          done
+          aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$TASK_ARN" \
+            --region "$AWS_REGION" \
+            --query 'tasks[0].{lastStatus:lastStatus,stopCode:stopCode,stoppedReason:stoppedReason}' \
+            --output table
+
+      - name: Report result
+        run: |
+          set -euo pipefail
+          EXIT_CODE=$(aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$TASK_ARN" \
+            --region "$AWS_REGION" \
+            --query 'tasks[0].containers[?name==`minter`].exitCode | [0]' --output text)
+
+          {
+            echo "### DOI minting run (${{ inputs.environment }} / ${{ inputs.mode }})"
+            echo ""
+            echo "- Task: \`${TASK_ARN}\`"
+            echo "- Container exit code: \`${EXIT_CODE}\`"
+            echo "- CloudWatch log group: \`${LOG_GROUP}\`"
+            echo "- Log bucket: \`s3://${LOG_BUCKET}/\`"
+          } >> $GITHUB_STEP_SUMMARY
+
+          if [ "$EXIT_CODE" != "0" ]; then
+            echo "::error::Minting task exited with code ${EXIT_CODE}. Check ${LOG_GROUP} in CloudWatch."
+            exit 1
+          fi
+          echo "Minting run completed cleanly."

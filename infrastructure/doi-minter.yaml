@@ -1,0 +1,389 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Scheduled Neotoma DOI minting. Runs neotomapydoi as an ECS Fargate task inside
+  the VPC (so it can reach the Neotoma RDS instance on its private subnets),
+  triggered weekly by EventBridge Scheduler. Logs go to CloudWatch and S3;
+  a non-zero task exit publishes to an SNS topic that emails a human.
+
+Parameters:
+  Environment:
+    Type: String
+    AllowedValues: [dev, prod]
+    Description: Deployment environment. `dev` targets the holding tank database.
+
+  ImageUri:
+    Type: String
+    Description: Full ECR image URI including tag.
+
+  VPCId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC containing the Neotoma RDS instance.
+
+  PrivateSubnets:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: >
+      Private subnets with NAT egress. The task needs outbound HTTPS to
+      api.datacite.org, api.openalex.org, doi.org and ECR.
+
+  RDSSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: Security group attached to the Neotoma RDS instance.
+
+  DBAuthSecretArn:
+    Type: String
+    Description: ARN of the Secrets Manager secret holding the DBAUTH JSON blob.
+
+  DBAuthTestSecretArn:
+    Type: String
+    Description: ARN of the Secrets Manager secret holding the DBAUTH_TEST JSON blob.
+
+  DCiteSecretArn:
+    Type: String
+    Description: ARN of the Secrets Manager secret holding the DCITE JSON blob.
+
+  AlertEmail:
+    Type: String
+    Description: Address notified when a minting run fails.
+
+  ScheduleExpression:
+    Type: String
+    Default: cron(0 14 ? * FRI *)
+    Description: >
+      When to run, in UTC. The default is Fridays at 14:00 UTC, which is 09:00
+      US Central during daylight saving and 08:00 outside it.
+
+  ScheduleEnabled:
+    Type: String
+    Default: "DISABLED"
+    AllowedValues: ["ENABLED", "DISABLED"]
+    Description: >
+      Leave DISABLED until a manual run has been verified end to end, then
+      redeploy with ENABLED to hand the Friday job over to the scheduler.
+
+Resources:
+
+  # ---------------------------------------------------------------- logging --
+
+  LogBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub "neotoma-doi-logs-${Environment}-${AWS::AccountId}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: ArchiveOldLogs
+            Status: Enabled
+            Transitions:
+              - StorageClass: GLACIER_IR
+                TransitionInDays: 90
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/ecs/neotoma-doi-minter-${Environment}"
+      RetentionInDays: 365
+
+  # ------------------------------------------------------------ networking --
+
+  TaskSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "Neotoma DOI minter task (${Environment})"
+      VpcId: !Ref VPCId
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: DataCite, OpenAlex, ECR, S3 and RDS
+      Tags:
+        - Key: Name
+          Value: !Sub "neotoma-doi-minter-${Environment}"
+
+  RDSIngressFromTask:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref RDSSecurityGroupId
+      IpProtocol: tcp
+      FromPort: 5432
+      ToPort: 5432
+      SourceSecurityGroupId: !Ref TaskSecurityGroup
+      Description: !Sub "Neotoma DOI minter (${Environment})"
+
+  # ------------------------------------------------------------------- IAM --
+
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "neotoma-doi-minter-exec-${Environment}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: ReadMintingSecrets
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource:
+                  - !Ref DBAuthSecretArn
+                  - !Ref DBAuthTestSecretArn
+                  - !Ref DCiteSecretArn
+
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "neotoma-doi-minter-task-${Environment}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: WriteMintingLogs
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub "${LogBucket.Arn}/*"
+
+  SchedulerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "neotoma-doi-minter-scheduler-${Environment}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: scheduler.amazonaws.com }
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+      Policies:
+        - PolicyName: RunMintingTask
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: ecs:RunTask
+                Resource: !Ref TaskDefinition
+                Condition:
+                  ArnLike:
+                    ecs:cluster: !GetAtt Cluster.Arn
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource:
+                  - !GetAtt ExecutionRole.Arn
+                  - !GetAtt TaskRole.Arn
+
+  # ------------------------------------------------------------------- ECS --
+
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub "neotoma-doi-${Environment}"
+      CapacityProviders: [FARGATE]
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "neotoma-doi-minter-${Environment}"
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: "1024"
+      Memory: "2048"
+      ExecutionRoleArn: !GetAtt ExecutionRole.Arn
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      RuntimePlatform:
+        CpuArchitecture: X86_64
+        OperatingSystemFamily: LINUX
+      ContainerDefinitions:
+        - Name: minter
+          Image: !Ref ImageUri
+          Essential: true
+          Environment:
+            - Name: DOI_LOG_BUCKET
+              Value: !Ref LogBucket
+            - Name: NEOTOMA_ENVIRONMENT
+              Value: !Ref Environment
+          Secrets:
+            - Name: DBAUTH
+              ValueFrom: !Ref DBAuthSecretArn
+            - Name: DBAUTH_TEST
+              ValueFrom: !Ref DBAuthTestSecretArn
+            - Name: DCITE
+              ValueFrom: !Ref DCiteSecretArn
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: minter
+
+  # -------------------------------------------------------------- schedule --
+
+  Schedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: !Sub "neotoma-doi-minting-${Environment}"
+      Description: Weekly Neotoma DOI minting run.
+      State: !Ref ScheduleEnabled
+      ScheduleExpression: !Ref ScheduleExpression
+      ScheduleExpressionTimezone: UTC
+      FlexibleTimeWindow:
+        Mode: "OFF"
+      Target:
+        Arn: !GetAtt Cluster.Arn
+        RoleArn: !GetAtt SchedulerRole.Arn
+        RetryPolicy:
+          MaximumRetryAttempts: 0
+        EcsParameters:
+          TaskDefinitionArn: !Ref TaskDefinition
+          LaunchType: FARGATE
+          TaskCount: 1
+          NetworkConfiguration:
+            AwsvpcConfiguration:
+              Subnets: !Ref PrivateSubnets
+              SecurityGroups: [!Ref TaskSecurityGroup]
+              AssignPublicIp: DISABLED
+
+  # --------------------------------------------------------------- alerting --
+
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "neotoma-doi-minting-alerts-${Environment}"
+      DisplayName: Neotoma DOI minting
+
+  AlertSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref AlertTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  AlertTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics: [!Ref AlertTopic]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: events.amazonaws.com }
+            Action: sns:Publish
+            Resource: !Ref AlertTopic
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+
+  # The container exited non-zero: either the sandbox gate blocked the mint, or
+  # individual datasets failed. Details are in the errored log in S3.
+  TaskFailedRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub "neotoma-doi-minting-failed-${Environment}"
+      Description: Minting task stopped with a non-zero exit code.
+      EventPattern:
+        source: [aws.ecs]
+        detail-type: ["ECS Task State Change"]
+        detail:
+          clusterArn: [!GetAtt Cluster.Arn]
+          lastStatus: [STOPPED]
+          containers:
+            exitCode: [{ "anything-but": [0] }]
+      Targets:
+        - Id: NotifyBySns
+          Arn: !Ref AlertTopic
+          InputTransformer:
+            InputPathsMap:
+              taskArn: $.detail.taskArn
+              stoppedAt: $.detail.stoppedAt
+              stoppedReason: $.detail.stoppedReason
+            InputTemplate: !Sub |
+              "The Neotoma DOI minting run (${Environment}) failed."
+              ""
+              "Task:    <taskArn>"
+              "Stopped: <stoppedAt>"
+              "Reason:  <stoppedReason>"
+              ""
+              "Container logs: /ecs/neotoma-doi-minter-${Environment} in CloudWatch."
+              "Run logs:       s3://neotoma-doi-logs-${Environment}-${AWS::AccountId}/"
+
+  # The task never got as far as running its container (image pull failure,
+  # missing secret, no capacity). This produces no exit code, so it needs its
+  # own rule rather than another branch of the one above.
+  TaskFailedToStartRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub "neotoma-doi-minting-start-failed-${Environment}"
+      Description: Minting task failed to start.
+      EventPattern:
+        source: [aws.ecs]
+        detail-type: ["ECS Task State Change"]
+        detail:
+          clusterArn: [!GetAtt Cluster.Arn]
+          lastStatus: [STOPPED]
+          stopCode: [TaskFailedToStart]
+      Targets:
+        - Id: NotifyBySns
+          Arn: !Ref AlertTopic
+          InputTransformer:
+            InputPathsMap:
+              taskArn: $.detail.taskArn
+              stoppedReason: $.detail.stoppedReason
+            InputTemplate: !Sub |
+              "The Neotoma DOI minting task (${Environment}) failed to start."
+              ""
+              "Task:   <taskArn>"
+              "Reason: <stoppedReason>"
+
+Outputs:
+  ClusterName:
+    Description: ECS cluster running the minting task.
+    Value: !Ref Cluster
+    Export:
+      Name: !Sub "${AWS::StackName}-ClusterName"
+
+  TaskDefinitionArn:
+    Description: Task definition to pass to `aws ecs run-task`.
+    Value: !Ref TaskDefinition
+    Export:
+      Name: !Sub "${AWS::StackName}-TaskDefinitionArn"
+
+  TaskSecurityGroupId:
+    Description: Security group for manual `run-task` invocations.
+    Value: !Ref TaskSecurityGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-TaskSecurityGroupId"
+
+  LogBucketName:
+    Description: Bucket holding the per-run minting logs.
+    Value: !Ref LogBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-LogBucketName"
+
+  LogGroupName:
+    Description: CloudWatch log group for container stdout.
+    Value: !Ref LogGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-LogGroupName"

@@ -23,7 +23,7 @@ sequenceDiagram
     participant NeotomaDB@{ "type" : "database" }
     participant DataCite@{"type":"boundary"}
 
-    Note left of Batch: Trigger to run daily using Fargate
+    Note left of Batch: Trigger to run weekly using Fargate
     Batch->>neotomaPyDOI: Trigger a run (cron)
     neotomaPyDOI->>NeotomaDB: Check for new datasets without DOIs
     NeotomaDB->>neotomaPyDOI: Return datasetids
@@ -81,6 +81,314 @@ Before minting datasets, it is recommended to test the minting process using the
 ```bash
 uv run ndbdoi.py --tank
 ```
+
+## Automated Minting
+
+The manual Friday routine — a sandbox pass followed by a production mint — runs
+itself on AWS. The `infrastructure/doi-minter.yaml` CloudFormation stack builds
+out the architecture described in the sequence diagram above.
+
+```
+GitHub Actions (deploy.yml)          AWS
+  build image ──────────────────────► ECR
+  write credentials ────────────────► Secrets Manager
+  deploy stack ─────────────────────► CloudFormation
+                                        │
+                                        ├─ EventBridge Scheduler ── cron(0 14 ? * FRI *)
+                                        │        │
+                                        │        ▼
+                                        ├─ ECS Fargate task (private subnets)
+                                        │        ├─► Neotoma RDS
+                                        │        ├─► api.datacite.org
+                                        │        ├─► CloudWatch Logs (stdout)
+                                        │        └─► S3 (minting_*.log)
+                                        │
+                                        └─ EventBridge rule (non-zero exit) ─► SNS ─► email
+```
+
+The task runs **inside the VPC** because the Neotoma RDS instance sits on private
+subnets and is not reachable from a GitHub-hosted runner. GitHub Actions builds
+and deploys; EventBridge Scheduler and Fargate do the running.
+
+`entrypoint.sh` performs the sandbox pass first and only continues to the
+production mint if that pass exits cleanly.
+
+> **The sandbox pass is not read-only.** Without the `-t` flag the script
+> connects to the production database, and `freeze_data()` INSERTs rows into
+> `doi.frozen`. It does *not* write `ndb.datasetdoi`, so no DOI is recorded —
+> but "sandbox" here means "the DataCite sandbox", not "no writes". This is the
+> same behaviour as a manual run.
+
+### One-time setup
+
+#### 1. The OIDC role
+
+Create an IAM role — named `neotomapydoi` — that GitHub Actions in this
+repository, and only this repository, can assume. Its name is never referenced
+in code; the workflows find it through the `AWS_ROLE_ARN` repository secret.
+
+Do not confuse it with the `neotoma-doi-minter-*` roles further down: those are
+created by CloudFormation for the Fargate task and the scheduler to run as. The
+`neotomapydoi` role is what GitHub assumes in order to *deploy* them.
+
+If the account does not already have the GitHub OIDC provider, add it first:
+
+```bash
+aws iam create-open-id-connect-provider \
+  --url https://token.actions.githubusercontent.com \
+  --client-id-list sts.amazonaws.com
+```
+
+An OIDC role carries **two separate policies**, on two tabs in the IAM console:
+
+* the **trust policy** ("Trust relationships") — *who may assume the role*. This
+  is the one containing `Principal.Federated`.
+* the **permissions policy** ("Permissions") — *what the role may then do*. This
+  one never mentions OIDC.
+
+If you create the role through the console, choose trusted entity type
+**Web identity**, identity provider `token.actions.githubusercontent.com`,
+audience `sts.amazonaws.com`, then fill in organisation `NeotomaDB` and
+repository `neotomapydoi`. The console writes the trust policy for you and you
+never type the block below — it is recorded here so the intended result can be
+checked against **IAM → Roles → *role* → Trust relationships**.
+
+Trust policy (console-generated):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": {
+      "Federated": "arn:aws:iam::<ACCOUNT_ID>:oidc-provider/token.actions.githubusercontent.com"
+    },
+    "Action": "sts:AssumeRoleWithWebIdentity",
+    "Condition": {
+      "StringEquals": {
+        "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+      },
+      "StringLike": {
+        "token.actions.githubusercontent.com:sub": "repo:NeotomaDB/neotomapydoi:*"
+      }
+    }
+  }]
+}
+```
+
+Keep the `sub` condition narrow. A wildcard such as `repo:NeotomaDB/*` would let
+any repository in the organisation assume a role that can read production
+database credentials.
+
+The permissions policy is the part you do have to write. Unlike a
+deploy-to-S3 role, this one *provisions infrastructure*, so it is necessarily
+broad — CloudFormation creates the roles, cluster, bucket, schedule and alarms
+on its behalf. The pieces that can be scoped are scoped: the ECR repository, the
+secret prefix, and the IAM role names.
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ECRPush",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:GetAuthorizationToken",
+        "ecr:DescribeRepositories",
+        "ecr:CreateRepository",
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:InitiateLayerUpload",
+        "ecr:UploadLayerPart",
+        "ecr:CompleteLayerUpload",
+        "ecr:PutImage",
+        "ecr:BatchGetImage"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "MintingSecrets",
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:CreateSecret",
+        "secretsmanager:DescribeSecret",
+        "secretsmanager:PutSecretValue",
+        "secretsmanager:TagResource"
+      ],
+      "Resource": "arn:aws:secretsmanager:us-east-2:<ACCOUNT_ID>:secret:neotoma/doi-minter/*"
+    },
+    {
+      "Sid": "DeployStack",
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:CreateStack",
+        "cloudformation:UpdateStack",
+        "cloudformation:DescribeStacks",
+        "cloudformation:DescribeStackEvents",
+        "cloudformation:DescribeStackResources",
+        "cloudformation:GetTemplateSummary",
+        "cloudformation:CreateChangeSet",
+        "cloudformation:DescribeChangeSet",
+        "cloudformation:ExecuteChangeSet",
+        "cloudformation:DeleteChangeSet"
+      ],
+      "Resource": "arn:aws:cloudformation:us-east-2:<ACCOUNT_ID>:stack/neodoi-*/*"
+    },
+    {
+      "Sid": "StackResources",
+      "Effect": "Allow",
+      "Action": [
+        "ecs:CreateCluster",
+        "ecs:DeleteCluster",
+        "ecs:DescribeClusters",
+        "ecs:RegisterTaskDefinition",
+        "ecs:DeregisterTaskDefinition",
+        "ecs:DescribeTaskDefinition",
+        "ecs:TagResource",
+        "ec2:CreateSecurityGroup",
+        "ec2:DeleteSecurityGroup",
+        "ec2:DescribeSecurityGroups",
+        "ec2:AuthorizeSecurityGroupIngress",
+        "ec2:AuthorizeSecurityGroupEgress",
+        "ec2:RevokeSecurityGroupIngress",
+        "ec2:RevokeSecurityGroupEgress",
+        "ec2:DescribeVpcs",
+        "ec2:DescribeSubnets",
+        "ec2:CreateTags",
+        "s3:CreateBucket",
+        "s3:PutBucketPublicAccessBlock",
+        "s3:PutBucketVersioning",
+        "s3:PutBucketTagging",
+        "s3:PutEncryptionConfiguration",
+        "s3:PutLifecycleConfiguration",
+        "s3:GetBucketLocation",
+        "logs:CreateLogGroup",
+        "logs:DeleteLogGroup",
+        "logs:DescribeLogGroups",
+        "logs:PutRetentionPolicy",
+        "sns:CreateTopic",
+        "sns:DeleteTopic",
+        "sns:Subscribe",
+        "sns:GetTopicAttributes",
+        "sns:SetTopicAttributes",
+        "scheduler:CreateSchedule",
+        "scheduler:UpdateSchedule",
+        "scheduler:GetSchedule",
+        "scheduler:DeleteSchedule",
+        "events:PutRule",
+        "events:DeleteRule",
+        "events:DescribeRule",
+        "events:PutTargets",
+        "events:RemoveTargets"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "StackIAMRoles",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateRole",
+        "iam:DeleteRole",
+        "iam:GetRole",
+        "iam:PassRole",
+        "iam:TagRole",
+        "iam:AttachRolePolicy",
+        "iam:DetachRolePolicy",
+        "iam:PutRolePolicy",
+        "iam:DeleteRolePolicy",
+        "iam:GetRolePolicy",
+        "iam:ListRolePolicies",
+        "iam:ListAttachedRolePolicies"
+      ],
+      "Resource": "arn:aws:iam::<ACCOUNT_ID>:role/neotoma-doi-minter-*"
+    },
+    {
+      "Sid": "RunMintingTask",
+      "Effect": "Allow",
+      "Action": ["ecs:RunTask", "ecs:DescribeTasks"],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+`StackIAMRoles` is the clause worth reading twice: it lets the deploy role
+create IAM roles, which is only safe because the resource is pinned to the
+`neotoma-doi-minter-*` name prefix that the template uses. Widening it to `*`
+would let anything able to trigger this workflow create arbitrary roles.
+
+If the `ecs:RunTask` permission on the deploy role feels too broad, it is only
+needed by `run-minting.yml`; that workflow can be pointed at a second, much
+narrower role instead.
+
+#### 2. Repository secrets
+
+| Secret | Value |
+|---|---|
+| `AWS_ROLE_ARN` | ARN of the role above |
+| `RDS_HOSTNAME` | Neotoma RDS endpoint |
+| `RDS_USERNAME` | database user |
+| `RDS_PASSWORD` | database password |
+| `DCITE` | the full DataCite JSON blob, verbatim from your local `.env` |
+| `VPC_ID` | VPC containing RDS |
+| `PRIVATE_SUBNETS` | comma-separated private subnet ids |
+| `RDS_SECURITY_GROUP_ID` | security group attached to the RDS instance |
+| `ALERT_EMAIL` | address notified when a run fails |
+
+`DBAUTH` and `DBAUTH_TEST` are **not** secrets you set by hand. `deploy.yml`
+assembles them from `RDS_HOSTNAME`, `RDS_USERNAME` and `RDS_PASSWORD` into the
+psycopg2 keyword JSON that `neo_connect()` expects, then writes them to Secrets
+Manager. The ECS task injects them as environment variables, which is why
+`neo_connect()` reads `{**dotenv_values(), **os.environ}` rather than the `.env`
+file alone.
+
+#### 3. Confirm NAT egress
+
+The task needs outbound HTTPS to DataCite, OpenAlex and ECR. Verify the private
+subnets route through a NAT gateway:
+
+```bash
+aws ec2 describe-route-tables --region us-east-2 \
+  --filters "Name=association.subnet-id,Values=<one-of-your-private-subnets>" \
+  --query 'RouteTables[].Routes[?NatGatewayId!=`null`]'
+```
+
+If that returns nothing, either add a NAT gateway or switch the stack to the
+public subnets with `AssignPublicIp: ENABLED`.
+
+### Rollout order
+
+Do not skip ahead to the production schedule.
+
+1. **Deploy dev.** Push to `main`, or run **Deploy DOI Minter** with
+   `environment: dev`. The dev stack points `DBAUTH` at `neotomatank`.
+2. **Confirm the SNS subscription.** AWS emails a confirmation link to
+   `ALERT_EMAIL`; the alert is inert until it is clicked.
+3. **Run the gate.** **Run DOI Minting** → `environment: dev`,
+   `mode: gate-only`. Check `/ecs/neotoma-doi-minter-dev` in CloudWatch for the
+   `*** Neotoma DOI Generator ***` banner, and confirm logs land in
+   `s3://neotoma-doi-logs-dev-<account>/`.
+4. **Test the alarm.** Temporarily corrupt the `DCITE` secret, re-run, and
+   confirm the task exits non-zero and the email arrives. An untested alert is
+   not an alert.
+5. **Deploy prod** with `environment: prod` and `schedule_enabled: DISABLED`.
+6. **Run prod manually once** with `mode: full`, and compare the S3 logs against
+   what a manual Friday run would have produced.
+7. **Enable the schedule** by redeploying prod with `schedule_enabled: ENABLED`.
+
+### Running on demand
+
+**Run DOI Minting** (Actions tab) replaces the terminal session. Its `datasets`
+input maps to `ndbdoi.py -d`, and `mode: gate-only` stops after the sandbox
+pass. `-f/--force` is deliberately not exposed: force-publishing a dataset
+submitted less than two days ago should stay a manual act from a workstation.
+
+### Changing the schedule
+
+`ScheduleExpression` defaults to `cron(0 14 ? * FRI *)` — Fridays at 14:00 UTC,
+which is 09:00 US Central in summer and 08:00 in winter. EventBridge Scheduler
+supports `ScheduleExpressionTimezone`, so setting it to `America/Chicago` would
+hold a constant local time year-round.
 
 ## Neotoma DOI Metadata
 

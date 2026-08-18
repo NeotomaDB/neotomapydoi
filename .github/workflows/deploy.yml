@@ -1,0 +1,160 @@
+name: Deploy DOI Minter
+
+# Pushes to `main` deploy the **dev** stack, which targets the holding tank.
+# Deploying to production is deliberately manual: run this workflow from the
+# Actions tab and choose `prod`.
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Which stack to deploy
+        type: choice
+        options: [dev, prod]
+        default: dev
+      schedule_enabled:
+        description: Enable the weekly Friday schedule
+        type: choice
+        options: ["DISABLED", "ENABLED"]
+        default: "DISABLED"
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-2
+  ECR_REPO_NAME: neotoma-doi-minter
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set environment
+        run: |
+          ENVIRONMENT="${{ inputs.environment || 'dev' }}"
+          echo "ENVIRONMENT=$ENVIRONMENT" >> $GITHUB_ENV
+          echo "STACK_NAME=neodoi-$ENVIRONMENT" >> $GITHUB_ENV
+          echo "SCHEDULE_ENABLED=${{ inputs.schedule_enabled || 'DISABLED' }}" >> $GITHUB_ENV
+          if [ "$ENVIRONMENT" = "prod" ]; then
+            echo "RDSDB=neotoma" >> $GITHUB_ENV
+          else
+            echo "RDSDB=neotomatank" >> $GITHUB_ENV
+          fi
+
+      # Uses a repo-scoped OIDC role rather than long-lived access keys; see the
+      # "Automated Minting" section of the README for the trust policy.
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Create ECR repository if it doesn't exist
+        run: |
+          aws ecr describe-repositories \
+            --repository-names ${{ env.ECR_REPO_NAME }} \
+            --region ${{ env.AWS_REGION }} 2>/dev/null || \
+          aws ecr create-repository \
+            --repository-name ${{ env.ECR_REPO_NAME }} \
+            --region ${{ env.AWS_REGION }} \
+            --image-scanning-configuration scanOnPush=true \
+            --encryption-configuration encryptionType=AES256
+
+      - name: Build, tag, and push image to Amazon ECR
+        run: |
+          ECR_REPOSITORY=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPO_NAME }}
+          IMAGE_TAG=${{ github.sha }}
+          docker build -t $ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REPOSITORY:$IMAGE_TAG $ECR_REPOSITORY:${{ env.ENVIRONMENT }}
+          docker push $ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REPOSITORY:${{ env.ENVIRONMENT }}
+          echo "IMAGE_URI=$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_ENV
+
+      # Secrets are written here rather than declared in the template, so that a
+      # CloudFormation update can never overwrite a live credential with a
+      # placeholder. The template only receives their ARNs.
+      - name: Sync credentials to Secrets Manager
+        env:
+          RDS_HOSTNAME: ${{ secrets.RDS_HOSTNAME }}
+          RDS_USERNAME: ${{ secrets.RDS_USERNAME }}
+          RDS_PASSWORD: ${{ secrets.RDS_PASSWORD }}
+          DCITE: ${{ secrets.DCITE }}
+        run: |
+          set -euo pipefail
+          PREFIX="neotoma/doi-minter/${ENVIRONMENT}"
+
+          put_secret () {
+            local name="$1" value="$2"
+            if aws secretsmanager describe-secret --secret-id "$name" \
+                 --region "$AWS_REGION" >/dev/null 2>&1; then
+              aws secretsmanager put-secret-value --secret-id "$name" \
+                --secret-string "$value" --region "$AWS_REGION" >/dev/null
+            else
+              aws secretsmanager create-secret --name "$name" \
+                --secret-string "$value" --region "$AWS_REGION" >/dev/null
+            fi
+            aws secretsmanager describe-secret --secret-id "$name" \
+              --region "$AWS_REGION" --query ARN --output text
+          }
+
+          # psycopg2 connect kwargs, matching the shape neo_connect() expects.
+          DBAUTH=$(jq -nc --arg h "$RDS_HOSTNAME" --arg u "$RDS_USERNAME" \
+                          --arg p "$RDS_PASSWORD" --arg d "$RDSDB" \
+                    '{host:$h,port:5432,user:$u,password:$p,database:$d}')
+          DBAUTH_TEST=$(jq -nc --arg h "$RDS_HOSTNAME" --arg u "$RDS_USERNAME" \
+                               --arg p "$RDS_PASSWORD" \
+                         '{host:$h,port:5432,user:$u,password:$p,database:"neotomatank"}')
+
+          echo "DBAUTH_ARN=$(put_secret "$PREFIX/DBAUTH" "$DBAUTH")" >> $GITHUB_ENV
+          echo "DBAUTH_TEST_ARN=$(put_secret "$PREFIX/DBAUTH_TEST" "$DBAUTH_TEST")" >> $GITHUB_ENV
+          echo "DCITE_ARN=$(put_secret "$PREFIX/DCITE" "$DCITE")" >> $GITHUB_ENV
+
+      - name: Deploy CloudFormation stack
+        run: |
+          aws cloudformation deploy \
+            --template-file infrastructure/doi-minter.yaml \
+            --stack-name ${{ env.STACK_NAME }} \
+            --parameter-overrides \
+              "Environment=${{ env.ENVIRONMENT }}" \
+              "ImageUri=${{ env.IMAGE_URI }}" \
+              "VPCId=${{ secrets.VPC_ID }}" \
+              "PrivateSubnets=${{ secrets.PRIVATE_SUBNETS }}" \
+              "RDSSecurityGroupId=${{ secrets.RDS_SECURITY_GROUP_ID }}" \
+              "DBAuthSecretArn=${{ env.DBAUTH_ARN }}" \
+              "DBAuthTestSecretArn=${{ env.DBAUTH_TEST_ARN }}" \
+              "DCiteSecretArn=${{ env.DCITE_ARN }}" \
+              "AlertEmail=${{ secrets.ALERT_EMAIL }}" \
+              "ScheduleEnabled=${{ env.SCHEDULE_ENABLED }}" \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --region ${{ env.AWS_REGION }} \
+            --no-fail-on-empty-changeset
+
+      - name: Summarise deployment
+        run: |
+          {
+            echo "### DOI minter deployed"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Environment | \`${ENVIRONMENT}\` |"
+            echo "| Stack | \`${STACK_NAME}\` |"
+            echo "| Image | \`${IMAGE_URI}\` |"
+            echo "| Database | \`${RDSDB}\` |"
+            echo "| Weekly schedule | \`${SCHEDULE_ENABLED}\` |"
+            echo ""
+            echo "Deploying does not run the minter. Use the **Run DOI Minting**"
+            echo "workflow to trigger a run."
+          } >> $GITHUB_STEP_SUMMARY
