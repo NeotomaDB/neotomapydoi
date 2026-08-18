@@ -55,6 +55,7 @@ jobs:
           echo "CLUSTER=$(get_output ClusterName)" >> $GITHUB_ENV
           echo "TASK_DEF=$(get_output TaskDefinitionArn)" >> $GITHUB_ENV
           echo "TASK_SG=$(get_output TaskSecurityGroupId)" >> $GITHUB_ENV
+          echo "TASK_SUBNETS=$(get_output PrivateSubnetIds)" >> $GITHUB_ENV
           echo "LOG_BUCKET=$(get_output LogBucketName)" >> $GITHUB_ENV
           echo "LOG_GROUP=$(get_output LogGroupName)" >> $GITHUB_ENV
 
@@ -78,7 +79,9 @@ jobs:
                + (if ($cmd | length) > 0 then {command: $cmd} else {} end))
             ]}')
 
-          NETWORK=$(jq -nc --arg sg "$TASK_SG" --arg subnets "${{ secrets.PRIVATE_SUBNETS }}" '
+          # Subnets come from the stack output rather than a secret, so there is
+          # one fewer value that can silently be empty at run time.
+          NETWORK=$(jq -nc --arg sg "$TASK_SG" --arg subnets "$TASK_SUBNETS" '
             {awsvpcConfiguration: {
               subnets: ($subnets | split(",")),
               securityGroups: [$sg],

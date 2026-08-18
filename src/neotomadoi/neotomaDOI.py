@@ -15,6 +15,7 @@ from .activity import activity
 from .credentials import credentials
 from .databaseMode import databaseMode
 from .dataciteTestMode import dataciteTestMode
+from .exceptions import DatasetNotReady
 from .fetch_metadata import (
     neo_contributors,
     neo_creators,
@@ -521,14 +522,22 @@ class neotomaDOI:
         _ = self.validate()
 
         payload = {"type": "dois", "attributes": self.data}
-        date = min(
-            [
-                datetime.strptime(i.get("date"), "%Y-%m-%d")
-                for i in self.data.get("dates")
-                if i.get("dateType") == "Submitted"
-            ]
-        )
+        submitted = [
+            datetime.strptime(i.get("date"), "%Y-%m-%d")
+            for i in self.data.get("dates")
+            if i.get("dateType") == "Submitted"
+        ]
+        # No submission date means the owner has not submitted the dataset yet,
+        # which is a normal transient state rather than a fault. Raise in both
+        # modes, not just `prod`: the sandbox pass is a rehearsal of the mint, so
+        # it should skip exactly what production would skip.
+        if not submitted:
+            raise DatasetNotReady(
+                f"dataset {self.datasetid} has no submission date; not submitted yet"
+            )
+
         if self.dataciteMode.name == "prod":
+            date = min(submitted)
             if datetime.now() - date > timedelta(days=2):
                 payload["attributes"]["event"] = "publish"
             elif force:

@@ -1,6 +1,7 @@
 from .credentials import credentials
 from .databaseMode import databaseMode
 from .dataciteTestMode import dataciteTestMode
+from .exceptions import DatasetNotReady
 from .fetch_metadata import (
     neo_contributors,
     neo_creators,
@@ -17,6 +18,7 @@ from .neo_connect import neo_connect
 from .neotomaDOI import activity, neotomaDOI
 
 __all__ = [
+    "DatasetNotReady",
     "dataciteTestMode",
     "databaseMode",
     "neo_connect",

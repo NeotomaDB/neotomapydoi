@@ -113,6 +113,7 @@ def main(args):
     _ = printargs(args, datasetids)
 
     errors = 0
+    skipped = 0
     for dataset_id in datasetids:
         try:
             # Create and configure DOI object
@@ -147,6 +148,13 @@ def main(args):
             else:
                 print(f"○ Dataset {dataset_id}: Skipped (already has DOI: {doi_obj.identifiers.get('identifier')})")
 
+        except neotomadoi.DatasetNotReady as e:
+            # Not a fault: the dataset simply is not ready to be minted yet.
+            # Log it and carry on so one such record cannot block the rest of
+            # the run. No errored.log entry, and no effect on the exit code.
+            skipped += 1
+            print(f"○ Dataset {dataset_id}: Skipped - {str(e)}")
+
         except Exception as e:
             errors += 1
             print(f"✗ Dataset {dataset_id}: Failed - {str(e)}")
@@ -159,7 +167,8 @@ def main(args):
                 f.write("\n")
 
     print("-" * 50)
-    print(f"Processing complete: {len(datasetids) - errors} ok, {errors} failed")
+    print(f"Processing complete: {len(datasetids) - errors - skipped} ok, "
+          f"{skipped} skipped, {errors} failed")
     return 1 if errors else 0
 
 if __name__ == '__main__':
