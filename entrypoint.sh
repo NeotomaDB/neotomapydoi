@@ -13,6 +13,21 @@
 
 set -uo pipefail
 
+GATE_ONLY="${GATE_ONLY:-0}"
+
+# Arguments are forwarded verbatim to both passes, and the second pass adds `-m`.
+# So `-t` would otherwise produce `ndbdoi.py -m -t`: holding-tank data published
+# to *production* DataCite under the 10.21233 shoulder. Tank data must never
+# reach production, so requesting the tank forces the run to stop at the gate.
+for arg in "$@"; do
+  case "$arg" in
+    -t|--tank)
+      echo "Tank mode requested; forcing GATE_ONLY so tank data can never reach production DataCite."
+      GATE_ONLY=1
+      ;;
+  esac
+done
+
 RUN_ID="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
 LOG_DIR=/tmp/minting-logs
 mkdir -p "$LOG_DIR"
@@ -28,7 +43,7 @@ if [ "$GATE" -ne 0 ]; then
   exit "$GATE"
 fi
 
-if [ "${GATE_ONLY:-0}" = "1" ]; then
+if [ "$GATE_ONLY" = "1" ]; then
   echo "GATE_ONLY set — stopping after the sandbox pass."
   python scripts/ship_logs.py "$LOG_DIR" "${RUN_ID}-gate-only"
   exit 0
