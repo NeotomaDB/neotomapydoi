@@ -1,0 +1,14 @@
+.venv/
+.env
+.git/
+.github/
+logs/
+site/
+docs/
+tests/
+infrastructure/
+**/__pycache__/
+*.log
+.coverage
+.python-version
+.vscode/

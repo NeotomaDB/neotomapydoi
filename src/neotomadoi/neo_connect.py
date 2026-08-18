@@ -1,3 +1,4 @@
+import os
 from json import loads
 
 import psycopg2
@@ -13,7 +14,9 @@ def neo_connect(tank: bool = False) -> psycopg2.connect:
     Returns:
         psycopg2.connect: _A valid connection the the Neotoma Database server_
     """
-    secrets = dotenv_values()
+    # A local `.env` is the developer workflow; real environment variables take
+    # precedence so the container can inject credentials with no `.env` present.
+    secrets = {**dotenv_values(), **os.environ}
     if tank:
         CONN_STRING = loads(secrets["DBAUTH_TEST"])
     else:

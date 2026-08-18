@@ -21,6 +21,7 @@ The script can be run as:
 import argparse
 import json
 import os
+import sys
 import traceback
 from datetime import UTC, datetime
 
@@ -52,7 +53,6 @@ def parse_args():
                         help='Show the program\'s version number and exit.')
     parser.add_argument('-o', '--output',
                         default = 'minting',
-                        nargs = 1,
                         type = str,
                         help = 'Provide an output file prefix for the minting report (including the log, errors and updates).')
     parser.add_argument('-u', '--update',
@@ -66,7 +66,6 @@ def parse_args():
     group.add_argument('-w', '--weeks',
                         type = int,
                         default = 2,
-                        nargs = 1,
                         help = 'Time lag in weeks for dataset minting.')
     group.add_argument('-d', '--datasets',
                         type = lambda x: [int(y) for y in x.split(',')],
@@ -113,6 +112,7 @@ def main(args):
 
     _ = printargs(args, datasetids)
 
+    errors = 0
     for dataset_id in datasetids:
         try:
             # Create and configure DOI object
@@ -148,6 +148,7 @@ def main(args):
                 print(f"○ Dataset {dataset_id}: Skipped (already has DOI: {doi_obj.identifiers.get('identifier')})")
 
         except Exception as e:
+            errors += 1
             print(f"✗ Dataset {dataset_id}: Failed - {str(e)}")
             with open(f"{args.output}_{runstart}_errored.log", "a", encoding="UTF-8") as f:
                 json.dump({
@@ -158,19 +159,8 @@ def main(args):
                 f.write("\n")
 
     print("-" * 50)
-    print("Processing complete")
+    print(f"Processing complete: {len(datasetids) - errors} ok, {errors} failed")
+    return 1 if errors else 0
 
 if __name__ == '__main__':
-    args = parse_args()
-else:
-    # For testing in the Python environment:
-    class args:
-        tank = False
-        mint = True
-        weeks = [1]
-        datasets = [[66173,66174,66175,66176]]
-        output = 'minting'
-        update = False
-        force = False
-
-main(args)
+    sys.exit(main(parse_args()))
