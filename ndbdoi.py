@@ -27,7 +27,7 @@ from datetime import UTC, datetime
 
 import psycopg2
 import psycopg2.extras
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 
 import neotomadoi
 
@@ -77,11 +77,27 @@ def parse_args():
         parser.error("-f/--force can only be used with -d/--datasets.")
     return args
 
+def _database_name(args):
+    """Name the database this run will actually connect to.
+
+    `-t/--tank` selects which connection string is read, but the database itself
+    is whatever that string names. In the deployed dev stack DBAUTH points at
+    the holding tank, so reporting the flag alone would print "Production" for a
+    run against `neotomatank`. Read the same value `neo_connect()` does.
+    """
+    key = "DBAUTH_TEST" if args.tank else "DBAUTH"
+    secrets = {**dotenv_values(), **os.environ}
+    try:
+        conn = json.loads(secrets[key])
+        return f"{conn.get('database', '?')} on {conn.get('host', '?')}"
+    except (KeyError, ValueError, TypeError):
+        return f"unknown ({key} missing or unreadable)"
+
 def printargs(args, datasetids):
     runstart = datetime.now(UTC).isoformat()
     print("*** Neotoma DOI Generator ***")
     print(f"Run: {runstart}")
-    print(f"Database: {'Tank' if args.tank else 'Production'}")
+    print(f"Database: {_database_name(args)}")
     print(f"DataCite: {'Production' if args.mint else 'Sandbox'}")
     print(f"Datasets: {len(datasetids)} to process")
     print("-" * 50)

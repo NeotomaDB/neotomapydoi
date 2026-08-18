@@ -28,6 +28,16 @@ for arg in "$@"; do
   esac
 done
 
+# The dev stack reaches the holding tank through DBAUTH rather than through the
+# `-t` flag, so the loop above cannot see it. Without this, `environment: dev`
+# combined with `mode: full` would publish tank records as permanent 10.21233
+# DOIs. Defaulting to `prod` when unset means a missing variable still mints
+# rather than silently disabling production.
+if [ "${NEOTOMA_ENVIRONMENT:-prod}" = "dev" ]; then
+  echo "Dev environment; forcing GATE_ONLY so tank data cannot reach production DataCite."
+  GATE_ONLY=1
+fi
+
 RUN_ID="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
 LOG_DIR=/tmp/minting-logs
 mkdir -p "$LOG_DIR"
