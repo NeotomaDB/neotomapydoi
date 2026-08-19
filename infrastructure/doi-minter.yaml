@@ -2,7 +2,7 @@ AWSTemplateFormatVersion: "2010-09-09"
 Description: >
   Scheduled Neotoma DOI minting. Runs neotomapydoi as an ECS Fargate task inside
   the VPC (so it can reach the Neotoma RDS instance on its private subnets),
-  triggered weekly by EventBridge Scheduler. Logs go to CloudWatch and S3;
+  triggered on a schedule by EventBridge Scheduler. Logs go to CloudWatch and S3;
   a non-zero task exit publishes to an SNS topic that emails a human.
 
 Parameters:
@@ -47,10 +47,20 @@ Parameters:
 
   ScheduleExpression:
     Type: String
-    Default: cron(0 14 ? * FRI *)
+    Default: cron(0 0 ? * MON,WED,FRI *)
     Description: >
-      When to run, in UTC. The default is Fridays at 14:00 UTC, which is 09:00
-      US Central during daylight saving and 08:00 outside it.
+      When to run, interpreted in ScheduleTimezone. The default is midnight on
+      Mondays, Wednesdays and Fridays. Note the selection query only picks up
+      datasets more than two days old, so running more often shortens the wait
+      before a new dataset is minted rather than minting anything sooner.
+
+  ScheduleTimezone:
+    Type: String
+    Default: America/Los_Angeles
+    Description: >
+      IANA timezone the schedule is read in. Using a named zone rather than UTC
+      keeps the local run time fixed across daylight saving changes, instead of
+      drifting by an hour twice a year.
 
   ScheduleEnabled:
     Type: String
@@ -58,7 +68,7 @@ Parameters:
     AllowedValues: ["ENABLED", "DISABLED"]
     Description: >
       Leave DISABLED until a manual run has been verified end to end, then
-      redeploy with ENABLED to hand the Friday job over to the scheduler.
+      redeploy with ENABLED to hand the recurring job over to the scheduler.
 
 Resources:
 
@@ -245,10 +255,10 @@ Resources:
     Type: AWS::Scheduler::Schedule
     Properties:
       Name: !Sub "neotoma-doi-minting-${Environment}"
-      Description: Weekly Neotoma DOI minting run.
+      Description: Neotoma DOI minting run (midnight, Mondays/Wednesdays/Fridays).
       State: !Ref ScheduleEnabled
       ScheduleExpression: !Ref ScheduleExpression
-      ScheduleExpressionTimezone: UTC
+      ScheduleExpressionTimezone: !Ref ScheduleTimezone
       FlexibleTimeWindow:
         Mode: "OFF"
       Target:
