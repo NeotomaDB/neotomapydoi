@@ -45,23 +45,6 @@ Parameters:
     Type: String
     Description: Address notified when a minting run fails.
 
-  ScheduleExpression:
-    Type: String
-    Default: cron(0 0 ? * MON,WED,FRI *)
-    Description: >
-      When to run, interpreted in ScheduleTimezone. The default is midnight on
-      Mondays, Wednesdays and Fridays. Note the selection query only picks up
-      datasets more than two days old, so running more often shortens the wait
-      before a new dataset is minted rather than minting anything sooner.
-
-  ScheduleTimezone:
-    Type: String
-    Default: America/Los_Angeles
-    Description: >
-      IANA timezone the schedule is read in. Using a named zone rather than UTC
-      keeps the local run time fixed across daylight saving changes, instead of
-      drifting by an hour twice a year.
-
   ScheduleEnabled:
     Type: String
     Default: "DISABLED"
@@ -257,8 +240,15 @@ Resources:
       Name: !Sub "neotoma-doi-minting-${Environment}"
       Description: Neotoma DOI minting run (midnight, Mondays/Wednesdays/Fridays).
       State: !Ref ScheduleEnabled
-      ScheduleExpression: !Ref ScheduleExpression
-      ScheduleExpressionTimezone: !Ref ScheduleTimezone
+      # Literal rather than a stack parameter on purpose. `aws cloudformation
+      # deploy` reuses the previous value of any parameter it is not given, so a
+      # parameter's Default is only ever read when a stack is first created —
+      # editing the Default would silently leave existing stacks on their old
+      # schedule. Inlining means a change here always takes effect on deploy.
+      # Midnight Mondays/Wednesdays/Fridays, Pacific. A named IANA zone keeps
+      # the local time fixed rather than drifting an hour at each DST change.
+      ScheduleExpression: cron(0 0 ? * MON,WED,FRI *)
+      ScheduleExpressionTimezone: America/Los_Angeles
       FlexibleTimeWindow:
         Mode: "OFF"
       Target:
