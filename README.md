@@ -40,6 +40,9 @@ sequenceDiagram
 
 * [Simon Goring](http://goring.org): University of Wisconsin - Madison [![orcid](https://img.shields.io/badge/orcid-0000--0002--2700--4605-brightgreen.svg)](https://orcid.org/0000-0002-2700-4605)
 
+* [Socorro Dominguez Vidana](https://ht-data.com/)[![orcid](https://img.shields.io/badge/orcid-0000--0002--7926--4935-brightgreen.svg)](https://orcid.org/0000-0002-7926-4935) 
+
+
 ## Contribution
 
 We welcome user contributions to this project.  All contributors are expected to follow the [code of conduct](code_of_conduct.md). Contribution guidelines can be found in the [Contributing](CONTRIBUTING.md) document. Contributors should fork this project and make a pull request indicating the nature of the changes and the intended utility.  Further information for this workflow can be found on the GitHub [Pull Request Tutorial webpage](https://help.github.com/articles/about-pull-requests/).
@@ -385,10 +388,36 @@ submitted less than two days ago should stay a manual act from a workstation.
 
 ### Changing the schedule
 
-`ScheduleExpression` defaults to `cron(0 0 ? * MON,WED,FRI *)`, read in the
-`ScheduleTimezone` parameter which defaults to `Los Angeles`; ie midnight Pacific on Mondays, Wednesdays and Fridays.
+The schedule is set literally in `infrastructure/doi-minter.yaml`, on the
+`Schedule` resource:
 
-Running three times a week shortens how long a new dataset waits for its DOI, keeping the 48 hours window for datasets to settle.
+```yaml
+ScheduleExpression: cron(0 0 ? * MON,WED,FRI *)
+ScheduleExpressionTimezone: America/Los_Angeles
+```
+
+Midnight Pacific on Mondays, Wednesdays and Fridays. Changing it means editing
+the template and redeploying, which is deliberate — the schedule is reviewed
+like any other change.
+
+It is **not** a stack parameter, and that is worth understanding.
+`aws cloudformation deploy` reuses the previous value of any parameter it is not
+explicitly given, so a parameter's `Default` is only ever read when the stack is
+first created. Editing a `Default` would appear to change the schedule while
+leaving every existing stack untouched. Inlining the value removes that trap.
+
+Running three times a week shortens how long a new dataset waits for its DOI,
+while keeping the 48-hour window for records to settle. It does not mint
+anything sooner than two days after creation — that floor comes from
+`ds_timeslice.sql`, not the schedule. Runs with nothing to do report
+`0 to process` and exit in a couple of seconds.
+
+To stop a schedule without redeploying:
+
+```bash
+aws scheduler update-schedule --name neotoma-doi-minting-prod \
+  --region us-east-2 --state DISABLED
+```
 
 ## Neotoma DOI Metadata
 
