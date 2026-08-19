@@ -1,7 +1,7 @@
 name: Run DOI Minting
 
-# The manual replacement for the Friday terminal session. The weekly run itself
-# is fired by EventBridge Scheduler inside AWS; this workflow is for ad hoc runs
+# The manual replacement for the Friday terminal session. The scheduled runs
+# are fired by EventBridge Scheduler inside AWS; this workflow is for ad hoc runs
 # and for verifying the pipeline after a deploy.
 on:
   workflow_dispatch:
@@ -110,7 +110,7 @@ jobs:
         run: |
           set -euo pipefail
           # `wait tasks-stopped` polls for up to 10 minutes per call; a large
-          # weekly batch can run longer, so retry until the task really stops.
+          # batch can run longer, so retry until the task really stops.
           for _ in $(seq 1 9); do
             if aws ecs wait tasks-stopped --cluster "$CLUSTER" --tasks "$TASK_ARN" \
                  --region "$AWS_REGION" 2>/dev/null; then

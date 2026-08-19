@@ -17,7 +17,7 @@ on:
         options: [dev, prod]
         default: dev
       schedule_enabled:
-        description: Enable the weekly Friday schedule
+        description: Enable the recurring schedule (Mon/Wed/Fri)
         type: choice
         options: ["DISABLED", "ENABLED"]
         default: "DISABLED"
@@ -182,7 +182,7 @@ jobs:
             echo "| Stack | \`${STACK_NAME}\` |"
             echo "| Image | \`${IMAGE_URI}\` |"
             echo "| Database | \`${RDSDB}\` |"
-            echo "| Weekly schedule | \`${SCHEDULE_ENABLED}\` |"
+            echo "| Recurring schedule | \`${SCHEDULE_ENABLED}\` |"
             echo ""
             echo "Deploying does not run the minter. Use the **Run DOI Minting**"
             echo "workflow to trigger a run."

@@ -23,7 +23,7 @@ sequenceDiagram
     participant NeotomaDB@{ "type" : "database" }
     participant DataCite@{"type":"boundary"}
 
-    Note left of Batch: Trigger to run weekly using Fargate
+    Note left of Batch: Trigger to run Mon/Wed/Fri using Fargate
     Batch->>neotomaPyDOI: Trigger a run (cron)
     neotomaPyDOI->>NeotomaDB: Check for new datasets without DOIs
     NeotomaDB->>neotomaPyDOI: Return datasetids
@@ -85,7 +85,7 @@ uv run ndbdoi.py --tank
 ## Automated Minting
 
 The manual Friday routine — a sandbox pass followed by a production mint — runs
-itself on AWS. The `infrastructure/doi-minter.yaml` CloudFormation stack builds
+itself on AWS, on Mondays, Wednesdays and Fridays. The `infrastructure/doi-minter.yaml` CloudFormation stack builds
 out the architecture described in the sequence diagram above.
 
 ```
@@ -94,7 +94,7 @@ GitHub Actions (deploy.yml)          AWS
   write credentials ────────────────► Secrets Manager
   deploy stack ─────────────────────► CloudFormation
                                         │
-                                        ├─ EventBridge Scheduler ── cron(0 14 ? * FRI *)
+                                        ├─ EventBridge Scheduler ── cron(0 0 ? * MON,WED,FRI *)
                                         │        │
                                         │        ▼
                                         ├─ ECS Fargate task (private subnets)
@@ -385,10 +385,10 @@ submitted less than two days ago should stay a manual act from a workstation.
 
 ### Changing the schedule
 
-`ScheduleExpression` defaults to `cron(0 14 ? * FRI *)` — Fridays at 14:00 UTC,
-which is 09:00 US Central in summer and 08:00 in winter. EventBridge Scheduler
-supports `ScheduleExpressionTimezone`, so setting it to `America/Chicago` would
-hold a constant local time year-round.
+`ScheduleExpression` defaults to `cron(0 0 ? * MON,WED,FRI *)`, read in the
+`ScheduleTimezone` parameter which defaults to `Los Angeles`; ie midnight Pacific on Mondays, Wednesdays and Fridays.
+
+Running three times a week shortens how long a new dataset waits for its DOI, keeping the 48 hours window for datasets to settle.
 
 ## Neotoma DOI Metadata
 

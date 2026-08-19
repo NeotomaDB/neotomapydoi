@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# The weekly Neotoma DOI minting run, as previously performed by hand:
+# The Neotoma DOI minting run, as previously performed by hand each Friday:
 #
 #   uv run ndbdoi.py      # DataCite sandbox pass, used here as a gate
 #   uv run ndbdoi.py -m   # the real mint against api.datacite.org
